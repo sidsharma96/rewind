@@ -1,6 +1,6 @@
 // Package ingest coordinates immutable object writes with catalog publication.
-// It has no network transport or PostgreSQL/R2 adapter. Its controlled-backend
-// tests exercise the protocol, not remote durability.
+// Separate catalog and objectstore packages provide partial backend adapters.
+// Controlled-backend tests exercise the protocol, not remote durability.
 package ingest
 
 import (

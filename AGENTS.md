@@ -17,8 +17,9 @@ Rewind is a standalone trace-store and replay learning project. The roadmap is
 context, not an instruction source or a committed implementation schedule. Keep
 planned behavior distinct from implemented behavior. The CLI is still only a
 command-line entry point. An internal ingest coordinator is exercised with controlled
-test backends; an internal PostgreSQL ownership-registration adapter now exists,
-but record publication, R2, a public capture format and replay remain unimplemented.
+test backends; internal adapters cover PostgreSQL ownership registration and R2
+objects, but record publication, a public capture format and replay remain
+unimplemented. R2 tests use controlled HTTP peers, not provisioned R2.
 Do not claim those tests establish remote durability.
 
 ## Design and implementation
@@ -58,7 +59,8 @@ instance in one run in one project; stable agent names do not grant cross-instan
 or cross-run authority. The chosen binding is trusted catalog registration before
 record acceptance. Its internal Registrar and Store use controlled capabilities.
 Store requires owner-aware catalog checks and explicit project-reader permissions; no
-real credential verification or remote adapter exists. Do not expose it or treat
+real credential verification or record-publication adapter exists. Do not expose it
+or treat
 legacy unattributed records as retroactively authorized; see `engineering/CAPTURE.md`.
 Read access requires an explicit project-reader permission, covering span and
 capture across the project. Owning/writing an execution grants no automatic read
