@@ -4,6 +4,9 @@ Status: the user selected a small explicit Rewind capture path first, with an
 OpenTelemetry-compatible internal record and a later OTLP adapter. No public capture
 schema, saved format, receiver or record normalizer is implemented. The current
 ingest coordinator receives opaque bytes and does not know OpenTelemetry types.
+An isolated [encoding experiment](CAPTURE-ENCODING.md) compares full JSON with
+JSON metadata and raw bodies, including compression. Its measured results support
+a proposal, not a selected format or integration with record acceptance.
 
 ## Two entrances to one acceptance path
 
