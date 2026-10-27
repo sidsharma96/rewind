@@ -73,13 +73,16 @@ func TestLifetimeRejectsUnspecifiedValues(t *testing.T) {
 
 // lifetimeCatalog is a sequential test model for one record's retained marker.
 // It has no expiry worker or real clock; moving now does not remove any object
-// or marker. Real catalog clock/isolation/recovery guarantees are not modeled.
+// or marker. Expiry state belongs to this retained fixture value, not the coordinator.
+// Native catalog clock/isolation/recovery guarantees are not modeled.
 type lifetimeCatalog struct {
 	*modelCatalog
 	id       Identity
 	lifetime Lifetime
 	now      time.Time
 	calls    int
+	saveErr  error // injected failure before saving expiry
+	replyErr error // injected failure after saving expiry, before confirming it
 }
 
 func (c *lifetimeCatalog) expired(ctx context.Context, id Identity) (bool, error) {
@@ -89,8 +92,23 @@ func (c *lifetimeCatalog) expired(ctx context.Context, id Identity) (bool, error
 	if id != c.id {
 		return false, nil
 	}
-	phase, err := c.lifetime.PhaseAt(c.now)
-	return phase != BeforeExpiry, err
+	if _, exists := c.rows[id]; !exists {
+		return false, nil
+	}
+	next, err := c.lifetime.ObserveExpiry(c.now)
+	if err != nil {
+		return false, err
+	}
+	if !c.lifetime.Expired() && next.Expired() {
+		if c.saveErr != nil {
+			return false, c.saveErr
+		}
+		c.lifetime = next // controlled save under modelCatalog.mu, not remote storage
+		if c.replyErr != nil {
+			return false, c.replyErr
+		}
+	}
+	return c.lifetime.Expired(), nil
 }
 
 func (c *lifetimeCatalog) CheckWrite(ctx context.Context, id Identity, a Attribution) error {
@@ -167,7 +185,7 @@ func TestRetainedExpiredIdentityRefusesRetryAndRead(t *testing.T) {
 			}
 		}
 		got := catalog.rows[c.id]
-		if got != original || c.lifetime != lifetime {
+		if got != original || !c.lifetime.PayloadExpiresAt().Equal(lifetime.PayloadExpiresAt()) || !c.lifetime.MarkerUntil().Equal(lifetime.MarkerUntil()) {
 			t.Fatalf("refusal changed reference/deadlines=%+v", got)
 		}
 		requireRead(t, fresh, sampleID, []byte("span metadata"))

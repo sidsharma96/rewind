@@ -77,6 +77,16 @@ Native PostgreSQL tests validate schema storage and coordination using trusted S
 setup only; record publication and an authenticated policy-control path remain
 unimplemented. There is no schema migration or automatic expiry worker.
 
+## Confirmed record expiry needs a commit
+
+Record operations must remember observed expiry while identity is retained, as
+specified in [retention](RETENTION.md#remember-confirmed-expiry). A reader cannot
+confirm expiry using a read-only clock comparison alone. The future Lookup path
+must serialize and commit the saved expired state after checking its reader grant.
+Do not upgrade a shared binding lock in place: choose a write-capable path from the
+start or release and retry with current checks. The concrete lookup locking strategy
+still needs a decision before the SQL record path is implemented.
+
 ## First registration has no row to lock
 
 `SELECT ... FOR UPDATE` does not lock a nonexistent binding. Registration needs

@@ -34,8 +34,33 @@ does not migrate or modify an existing schema. Native PostgreSQL tests use trust
 setup under the existing project-gate convention to verify project isolation,
 persistence through a new pool, rejected invalid settings and policy changes waiting for
 shared holders. No application policy-management API or SQL record publication
-is implied by those schema tests. Record-expiry behavior across a catalog clock
-regression still needs a decision before the acceptance path is implemented.
+is implied by those schema tests.
+
+## Remember confirmed expiry
+
+Once the authoritative catalog has saved and confirmed that a record expired,
+a backward database-clock correction must not make it live again while its identity
+is retained. The chosen state is one saved expired flag beside the original fixed
+deadlines. Check current permission first. An authorized lookup, preliminary write
+check or final publication that first discovers expiry must persist that transition
+before confirming ErrExpired. Do not change the original receipt or either deadline.
+This can require a catalog write during a read. Serialization and transaction failure
+handling belong to the backend, not an ingest-host timer.
+
+If saving expiry fails or its commit is uncertain, return an operational error
+rather than a confirmed expiry, absence or live receipt. The coordinator already
+stops a failed lookup/check before object access; a non-refusal Publish error is
+uncertain. A saved transition whose reply was lost still prevents revival, but an
+observation that never committed cannot supply that guarantee.
+
+Remembering expiry cannot detect a clock jump that happens before any saved expiry.
+A false forward jump can permanently expire a record early; correcting the clock
+will not undo saved expiry. No object deletion follows from the flag. The original
+marker deadline is unchanged, and protection does not outlive identity removal.
+The local value and controlled tests exercise this transition; native SQL record storage,
+expiry transactions and automatic cleanup remain unimplemented. The simplest
+alternative, comparing only the current clock with expiry on every request, permits
+revival after a backward correction and was not selected.
 
 ## Acceptance, expiry and byte reclamation
 
@@ -107,13 +132,16 @@ deadline schema is implemented yet.
 
 ## Local classification and catalog refusal experiment
 
-The local Lifetime value represents fixed payload/marker deadlines and classifies
-a supplied time as before payload expiry, within the marker window,
+The local Lifetime value represents fixed payload/marker deadlines and saved expiry.
+PhaseAt classifies a supplied time as before payload expiry, within the marker window,
 or after the marker window. Expiry starts at its exact deadline; the marker window
 ends at its exact deadline. Being after the marker window permits later forgetting,
 not automatic deletion or a requirement to accept old requests. Use explicit supplied
 times in tests; this value is not a clock, scheduler, cleanup worker or persistence
-protocol. The authoritative acceptance/clock placement still needs backend design.
+protocol. ObserveExpiry returns an updated copy whose Expired flag cannot revert;
+PhaseAt remains a pure clock/deadline classification and is not an availability
+predicate. The catalog must save the returned copy before confirming expiry. The
+authoritative acceptance/clock placement still needs backend design.
 
 The catalog contract includes a confirmed expired-record refusal. A retained expired
 identity must refuse publication under that identity without changing the original

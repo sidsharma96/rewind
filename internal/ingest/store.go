@@ -119,6 +119,11 @@ type Objects interface {
 // delivery deadline; a DeliveryWindow alone does not establish that trusted state.
 // Lookup checks the explicit project-reader grant before exposing any record state.
 // It returns original attribution with Duplicate=false; only absence is ErrNotFound.
+// After current authorization, newly observed expiry must be saved before confirming
+// ErrExpired, including in Lookup/CheckWrite. A saved expired identity cannot become
+// live after clock regression while retained. Failed/uncertain expiry commits return
+// operational errors, not confirmed expiry, absence or a live receipt. Deadlines and
+// original receipts remain unchanged. This does not authorize object deletion.
 // ErrDenied, ErrConflict and ErrExpired confirm refusal of this Publish attempt;
 // all other Publish errors may hide a commit. No error proves earlier absence.
 // Implementations honor cancellation, are safe for concurrent calls, and must not

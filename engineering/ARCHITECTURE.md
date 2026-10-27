@@ -66,7 +66,12 @@ use the same normal retention policy; matching or identical retries do not reset
 capture's deadline. Span and capture each use a configurable seven elapsed days
 from their own first authoritative acceptance. Expired-record markers have a configurable default window of
 24 hours after payload expiry; after marker removal, old-identity recognition is
-not guaranteed. Save receipts now carry original catalog-owned AcceptedAt and
+not guaranteed. Confirmed record expiry must also be saved before it is reported,
+so a backward catalog-clock correction cannot revive a retained expired identity.
+The local Lifetime value and controlled catalog tests exercise this state transition,
+including save failure and a saved transition whose reply is lost; native expiry
+transactions remain unimplemented. A false forward jump can expire early, and an
+uncommitted observation gives no protection. Save receipts now carry original catalog-owned AcceptedAt and
 ExpiresAt instants. The coordinator validates their ordering and returns them
 unchanged on retries; controlled tests keep both with the original reference and
 attribution. Native SQL record persistence and a public receipt encoding remain
