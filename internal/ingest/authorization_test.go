@@ -278,7 +278,7 @@ func TestRecordRejectsLegacyUnattributedRows(t *testing.T) {
 		if !registered {
 			delete(c.bindings, sampleExecution)
 		}
-		c.rows[sampleID] = Reference{sampleID, sha256.Sum256(nil), 0}
+		c.rows[sampleID] = Receipt{Reference: Reference{sampleID, sha256.Sum256(nil), 0}}
 		registrar := newRegistrar(t, trustedRegistrar("trusted-host-1"), c, 1)
 		_, err := registrar.Register(t.Context(), sampleExecution, sampleOwner)
 		if !registered && (!errors.Is(err, ErrIntegrity) || !errors.Is(err, ErrRegistrationUncertain)) {
@@ -386,6 +386,9 @@ func TestRecordConcurrentCollectorsKeepOneOriginalSubmitter(t *testing.T) {
 		}
 		if r.Attribution != original {
 			t.Fatal("concurrent retry changed original submitter")
+		}
+		if !r.AcceptedAt.Equal(c.now) || !r.ExpiresAt.Equal(c.now.Add(DefaultPayloadRetention)) {
+			t.Fatal("concurrent retry changed original times")
 		}
 		if !r.Duplicate {
 			created++

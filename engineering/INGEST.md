@@ -73,6 +73,14 @@ refusals of this attempt. Any other publication error has an unknown outcome:
 the catalog may have committed before the response was lost. No automatic retry or
 rollback is attempted. The caller must retry the same identity and captured bytes.
 A successful commit remains success even if cancellation arrives immediately after.
+The receipt includes catalog-owned `AcceptedAt` and `ExpiresAt`, recorded once
+with the original reference and attribution. An identical retry or lookup returns
+those original times, even after trusted retention configuration changes. Both
+must be specified and expiry must follow acceptance. A malformed publish receipt
+is uncertain plus integrity failure; a malformed lookup stops before object read.
+The coordinator does not sample its local clock to decide availability or rebuild
+an expiry from current configuration. Controlled tests exercise this result
+contract; it does not implement durable timestamp storage or automatic expiry.
 An explicit catalog expired-record result is also a confirmed refusal, not uncertain
 publication. A retained expired identity refuses identical or changed contents without
 altering the original acceptance. Lookup returns expired before any object read.

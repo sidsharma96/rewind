@@ -1,6 +1,10 @@
 # Working on Rewind
 
 Preserve user changes. Use plain, descriptive branch names without an agent prefix.
+After each confirmed PR merge, delete its upstream and local feature branches and
+prune stale tracking refs. Verify the branch tip still matches the merged PR head;
+preserve later work and branches checked out elsewhere. Squash merges need the PR
+head/merge evidence because ancestry alone cannot prove the feature tip was merged.
 Do not commit, push, create remote repositories, deploy or publish without user
 authorization. Authorization already given in the conversation remains valid.
 

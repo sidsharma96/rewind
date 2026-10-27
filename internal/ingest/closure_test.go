@@ -116,7 +116,7 @@ func TestSavedRunClosureRefusesFreshCoordinatorsAfterClockCorrection(t *testing.
 			if _, err := r.Register(t.Context(), sampleExecution, sampleOwner); !errors.Is(err, ErrDenied) || errors.Is(err, ErrRegistrationUncertain) {
 				t.Fatalf("closed registration: %v", err)
 			}
-			if o.count() != beforeObjects || c.count() != beforeRows || c.runs[key] != closed || c.rows[id] != accepted.Reference {
+			if o.count() != beforeObjects || c.count() != beforeRows || c.runs[key] != closed || c.rows[id] != accepted {
 				t.Fatal("closed attempts changed saved state")
 			}
 			if _, err := fresh.Read(t.Context(), id); err != nil {

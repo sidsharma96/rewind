@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"time"
 )
 
 var (
@@ -61,10 +62,16 @@ type Reference struct {
 	Size     int
 }
 
+// Receipt describes the original authoritative acceptance, not the current retry.
+// Catalog sets both times once with the reference/attribution. They are separate
+// from producer span timestamps; ExpiresAt is payload availability, not the end
+// of expired-identity recognition. This is not a selected public wire format.
 type Receipt struct {
 	Reference   Reference
 	Attribution Attribution
 	Duplicate   bool
+	AcceptedAt  time.Time
+	ExpiresAt   time.Time
 }
 
 // Attribution separates the execution owner from the authenticated submitter.
@@ -102,8 +109,11 @@ type Objects interface {
 // and registered owner, then expiry, allowing both absent and live records. It
 // reserves nothing. Publish repeats those checks atomically with acceptance,
 // before returning duplicate/conflict/expiry outcomes. Both kinds share one owner
-// but neither requires the peer record. Reference and original Attribution must
-// be committed together. Identical retries return the original attribution even
+// but neither requires the peer record. Reference, original Attribution and
+// AcceptedAt/ExpiresAt must be committed together. Times are nonzero and expiry
+// is strictly after acceptance; identical retries and lookups return the original
+// times even when trusted retention policy changes. They do not depend on an
+// ingest host's clock. Identical retries return the original attribution even
 // when a different authorized submitter retries; legacy unattributed rows fail closed.
 // When completion state exists, CheckWrite and Publish must also enforce its fixed
 // delivery deadline; a DeliveryWindow alone does not establish that trusted state.
@@ -193,7 +203,7 @@ func (s *Store) Write(ctx context.Context, id Identity, contents []byte) (Receip
 		}
 		return Receipt{}, fmt.Errorf("publish record: %w", errors.Join(ErrUncertain, err))
 	}
-	if receipt.Reference != ref || !validAttribution(receipt.Attribution) || receipt.Attribution.Owner != writer.Owner || (!receipt.Duplicate && receipt.Attribution != writer) {
+	if !validReceiptTimes(receipt) || receipt.Reference != ref || !validAttribution(receipt.Attribution) || receipt.Attribution.Owner != writer.Owner || (!receipt.Duplicate && receipt.Attribution != writer) {
 		return Receipt{}, fmt.Errorf("publish record: %w", errors.Join(ErrUncertain, ErrIntegrity))
 	}
 	// Once publication is confirmed, later cancellation cannot undo acceptance.
@@ -224,7 +234,7 @@ func (s *Store) Read(ctx context.Context, id Identity) ([]byte, error) {
 		return nil, fmt.Errorf("lookup record: %w", err)
 	}
 	ref := receipt.Reference
-	if ref.Identity != id || ref.Size < 0 || !validAttribution(receipt.Attribution) || receipt.Duplicate {
+	if !validReceiptTimes(receipt) || ref.Identity != id || ref.Size < 0 || !validAttribution(receipt.Attribution) || receipt.Duplicate {
 		return nil, ErrIntegrity
 	}
 	if ref.Size > s.limits.MaxRecordBytes {
@@ -268,4 +278,10 @@ func executionOf(id Identity) Execution {
 
 func validAttribution(a Attribution) bool {
 	return validRegistrationID(a.Owner.Run) && validRegistrationID(a.Owner.Instance) && validRegistrationID(a.SubmittedBy)
+}
+
+// The catalog owns eligibility and time. Never reconstruct expiry from current
+// policy or compare it with an ingest host's independent clock here.
+func validReceiptTimes(r Receipt) bool {
+	return !r.AcceptedAt.IsZero() && !r.ExpiresAt.IsZero() && r.ExpiresAt.After(r.AcceptedAt)
 }

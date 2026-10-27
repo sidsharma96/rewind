@@ -108,6 +108,7 @@ func (c *lifetimeCatalog) Lookup(ctx context.Context, id Identity, principal str
 
 func newLifetimeCatalog(t *testing.T, catalog *modelCatalog, lifetime Lifetime) *lifetimeCatalog {
 	t.Helper()
+	catalog.now = lifetime.PayloadExpiresAt().Add(-DefaultPayloadRetention)
 	c := &lifetimeCatalog{modelCatalog: catalog, id: captureID(), lifetime: lifetime, now: lifetime.PayloadExpiresAt().Add(-time.Hour)}
 	catalog.expiry = func(id Identity) error {
 		expired, err := c.expired(t.Context(), id)
@@ -166,7 +167,7 @@ func TestRetainedExpiredIdentityRefusesRetryAndRead(t *testing.T) {
 			}
 		}
 		got := catalog.rows[c.id]
-		if got != original.Reference || c.lifetime != lifetime {
+		if got != original || c.lifetime != lifetime {
 			t.Fatalf("refusal changed reference/deadlines=%+v", got)
 		}
 		requireRead(t, fresh, sampleID, []byte("span metadata"))
@@ -239,7 +240,7 @@ func testExpiryCheck(t *testing.T, duringUpload bool) {
 	} else if o.creates.Load() != creates || o.count() != 0 || c.calls != calls+1 {
 		t.Fatal("known expired identity reached upload or publication")
 	}
-	if ref := catalog.rows[c.id]; ref != r.Reference {
+	if ref := catalog.rows[c.id]; ref != r {
 		t.Fatalf("expired retry changed acceptance=%+v", ref)
 	}
 }
