@@ -384,7 +384,7 @@ func provision(t *testing.T, c *modelCatalog, id Identity, a Attribution) {
 
 func allow(ctx context.Context, _ string) error { return ctx.Err() }
 
-func newStore(t *testing.T, objects *modelObjects, catalog *modelCatalog, auth Authorizer, limits Limits) *Store {
+func newStore(t *testing.T, objects *modelObjects, catalog Catalog, auth Authorizer, limits Limits) *Store {
 	t.Helper()
 	s, err := New(auth, objects, catalog, limits)
 	if err != nil {

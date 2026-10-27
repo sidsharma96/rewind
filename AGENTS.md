@@ -111,7 +111,11 @@ explicitly rather than imposing the roadmap's authorship split.
 
 Before prose changes, read `docs/src/PROSE-STYLE-GUIDE.md`. Teach a beginning CS
 student with no assumed Go knowledge through one concrete execution. Explain
-terms and syntax when first needed. Show ownership, waiting, durable state and
+terms and syntax when first needed. Explain non-obvious Go library calls beside
+actual excerpts: what they do, why this operation needs them, who owns resources,
+which errors matter and what the call does not guarantee. Cover buffering, flush,
+close and durability separately when file I/O is introduced; do not assume package
+names or documentation links teach the mechanism. Show ownership, waiting, durable state and
 partial failure; compare a credible alternative using the same example.
 
 Read changed pages in learning order with source closed, verify claims and excerpts
