@@ -75,16 +75,18 @@ The read permission check orders authorization with catalog lookup. It does not
 cancel a read already authorized or recall bytes already returned. This is not a
 global kill switch. Credential expiry, revocation propagation and active-run shutdown
 remain unresolved. The selected normal-completion delivery policy is described below;
-tests of controlled grant changes do not implement that lifecycle.
+a deadline predicate and controlled catalog exercise delivery timing, not a full
+run lifecycle.
 
 ## Run completion and delayed delivery
 
-Selected policy, not implemented: normal completion closes new execution registration
+Selected policy: normal completion closes new execution registration
 and starts a finite delivery window for already registered calls. Authorized direct
 writers and explicitly delegated collectors can deliver span or capture during that
 window; the same owner and current-grant checks still apply. No collector-only
-bypass or transfer of ownership is introduced. The window's duration is awaiting
-the user's choice; no default has been selected.
+bypass or transfer of ownership is introduced. The selected configurable default
+is ten minutes from trusted normal completion, separate from payload retention and
+the 24-hour expired-record marker window.
 
 An optional collector gathers records, queues or batches delivery and retries
 failures. It does not become the execution owner. Finishing the producer's work
@@ -118,6 +120,32 @@ It cannot guarantee that every collector queue empties before the deadline. Revi
 its duration against observed queue age, retry budgets, publication latency and
 acceptable authority duration. Catalog clock/isolation rules, trusted lifecycle
 control and the behavior of registration retries still need an implementation design.
+
+The implemented internal slice is a fixed `DeliveryWindow` value, constructed from
+a trusted completion instant and an explicit positive duration. Its default constant
+is ten minutes; callers still supply policy explicitly. It compares a supplied
+instant against the original interval, including completion and excluding the
+deadline. Zero values and unspecified times fail closed. The value has no clock,
+worker, timer, mutation or completion/retry operation that could move its deadline.
+It is not a persisted encoding or a real run lifecycle.
+
+A controlled catalog uses this value under its existing mutex after owner/grant
+checks at CheckWrite and Publish. Tests move a supplied time during upload,
+check both span and capture, and remove the grant during the window. This isolates
+the deadline rule without deciding registration-retry responses or introducing a
+new lifecycle endpoint. The model leaves reads and original attribution intact.
+New-registration closure and trusted completion/revocation operations remain future
+integration, not guarantees established by this value.
+
+For a run completed at 12:00 with the default duration, publication at 12:09:59 is
+eligible and publication at 12:10 is refused. An upload that starts at 12:09:59 but
+publishes at 12:10 is refused too. An immediate-close alternative loses that last
+delivery opportunity; a timer that closes a local gate can lag or disappear with
+the ingest host. Comparing the deadline at final authoritative publication is the
+simple baseline. The predicate takes O(1) time and space with no extra object
+request or transferred bytes. Real catalog clock/isolation and recovery still need
+provider tests; a wall-clock rollback must not be assumed safe merely because a
+local value compares times correctly.
 
 For n record bytes, retain O(n) copy/hash work and transient memory. Each permitted
 write uses one preliminary catalog operation, one object create of n bytes, and one

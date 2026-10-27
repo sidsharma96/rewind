@@ -160,8 +160,10 @@ authoritative catalog before record acceptance. The local registration coordinat
 and owner-aware record publication share a binding contract, exercised with one
 controlled catalog. Normal completion will close new call registration and permit
 authorized delivery for already registered calls during a finite window; explicit
-revocation closes delivery immediately. The window duration is not selected, and
-no lifecycle operation exists yet; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
+revocation closes delivery immediately. The configurable default is ten minutes
+from trusted completion. A fixed window value and controlled catalog exercise
+delivery timing; new-registration closure and real lifecycle operations remain
+unimplemented; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
 Real grant issuance, revocation propagation, delegation protocols and durable
 representation remain unresolved; no token format or new API is selected.
 

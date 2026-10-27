@@ -105,6 +105,8 @@ type Objects interface {
 // but neither requires the peer record. Reference and original Attribution must
 // be committed together. Identical retries return the original attribution even
 // when a different authorized submitter retries; legacy unattributed rows fail closed.
+// When completion state exists, CheckWrite and Publish must also enforce its fixed
+// delivery deadline; a DeliveryWindow alone does not establish that trusted state.
 // Lookup checks the explicit project-reader grant before exposing any record state.
 // It returns original attribution with Duplicate=false; only absence is ErrNotFound.
 // ErrDenied, ErrConflict and ErrExpired confirm refusal of this Publish attempt;

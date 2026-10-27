@@ -119,6 +119,7 @@ type modelCatalog struct {
 	afterLookup   func()
 	expiry        func(Identity) error // sequential clock fixture only; called under mu
 	policyErr     error
+	writeWindow   func(Identity, Attribution) error // controlled lifecycle predicate; called under mu
 }
 
 func (m *modelCatalog) writerAllowed(id Identity, a Attribution) error {
@@ -128,6 +129,9 @@ func (m *modelCatalog) writerAllowed(id Identity, a Attribution) error {
 	reg, exists := m.bindings[executionOf(id)]
 	if !exists || reg.Owner != a.Owner || !m.writers[writerGrant{id.Tenant, a}] {
 		return ErrDenied
+	}
+	if m.writeWindow != nil {
+		return m.writeWindow(id, a)
 	}
 	return nil
 }
