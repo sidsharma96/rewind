@@ -158,9 +158,12 @@ scope. Even a valid instance scope does not prove ownership of every trace/span
 it names. A trusted execution creator must register that exact binding in the
 authoritative catalog before record acceptance. The local registration coordinator
 and owner-aware record publication share a binding contract, exercised with one
-controlled catalog. Real grant issuance, revocation propagation, delegation protocols,
-durable representation and queued delivery after a run ends remain unresolved;
-no token format or new API is selected.
+controlled catalog. Normal completion will close new call registration and permit
+authorized delivery for already registered calls during a finite window; explicit
+revocation closes delivery immediately. The window duration is not selected, and
+no lifecycle operation exists yet; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
+Real grant issuance, revocation propagation, delegation protocols and durable
+representation remain unresolved; no token format or new API is selected.
 
 Publication must atomically enforce the authoritative owner and applicable grant
 before returning duplicate/conflict outcomes. A preliminary lookup is not ownership

@@ -73,6 +73,10 @@ Read access requires an explicit project-reader permission across the project's
 span and capture records; producer write permission does not imply read permission.
 Controlled tests exercise the separate permissions, original submitter attribution
 and refusal after a grant changes during upload; see [ownership enforcement](AUTHORIZATION.md).
+Normal completion will stop new call registration and allow a bounded delivery
+window for already registered calls, with current ownership and grant checks.
+Explicit revocation closes submissions immediately at the catalog boundary.
+The duration and lifecycle implementation are still open; this is selected policy.
 Payload duration, cleanup, real authentication/grant lifecycles and combined query
 semantics remain to be designed. No expiry or quota mechanism exists yet.
 OTLP reception still needs its own bounded decoding, batch handling and
