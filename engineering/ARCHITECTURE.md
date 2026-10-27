@@ -51,9 +51,14 @@ still need design. These are agreed contracts, not implemented behavior.
 Build a small explicit Rewind capture path first, with an internal record designed
 against OpenTelemetry's span model from the start. A later OTLP receiver translates
 into the same record and acceptance path. This chooses implementation order, not a
-public schema, encoding, dependency or endpoint. Check real OTLP examples before
+complete public schema, dependency or endpoint. Check real OTLP examples before
 freezing the saved format. Preserve resource and instrumentation-scope context as
 well as span fields; a four-field request/response struct is not that record model.
+The selected saved layout is hybrid: versioned framing, JSON
+metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
+supports this direction. Its header, fixture schema and limits are not frozen
+production contracts; compression remains a separate decision. No production
+codec or normalizer exists yet.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
 needed for replay; missing capture must not be represented as an empty request or
