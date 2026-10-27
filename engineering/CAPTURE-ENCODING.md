@@ -1,8 +1,11 @@
 # Capture encoding experiment
 
-Status: approved experiment, not a selected storage format. No public codec,
-normalizer, endpoint or integration with ingest is introduced. Measurements cannot
-select OpenTelemetry field semantics, canonical equality or a compatibility promise.
+Status: the user selected the hybrid layout: versioned framing, JSON metadata and
+unchanged request/response bytes. This selects the representation direction, not
+the lab's header, limits or illustrative metadata as a frozen production format.
+No public codec, normalizer, endpoint or integration with ingest is introduced.
+OpenTelemetry field semantics, canonical equality and compatibility remain open.
+Compression policy is a separate decision; the gzip variants remain experiments.
 
 ## Question and baseline
 
@@ -79,7 +82,7 @@ measure neither provider billing nor end-to-end latency. No accepted object is
 rewritten; corruption prevents decoding, and there is no catalog publication or
 cross-store recovery experiment here.
 
-Recommend a direction only after reviewing results. Revisit when real metadata,
+The selected direction follows the reviewed results below. Revisit when real metadata,
 body-size/content distributions, compression needs, range reads or an object layout
 change are available. The simplest credible alternative remains full JSON; a
 smaller hybrid result does not by itself justify a public binary protocol.
@@ -115,8 +118,8 @@ binary or precompressed fixtures. For example, fresh default gzip state raises
 hybrid binary encode allocation to median 4,484,660 bytes, versus 1,122,925 without
 gzip. Allocations are not a retained-memory or peak-memory measurement.
 
-This supports proposing JSON metadata plus raw bodies, with compression deferred.
-It does not approve that format. There is no claim about every gzip level, another
+The user selected JSON metadata plus raw bodies from these results. Compression
+remains undecided. There is no claim about every gzip level, another
 compressor or a production distribution. A public format still needs all capture
 states, exact supported metadata semantics, normalization, framing compatibility
 and retries across encoder versions. In particular, gzip output is not covered by
