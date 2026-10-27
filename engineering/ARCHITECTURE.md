@@ -2,8 +2,10 @@
 
 This describes agreed contracts and implementation boundaries. The CLI provides
 help/version only. The internal ingest coordinator runs against controlled test
-backends. Ownership registration also has a native-pgx PostgreSQL adapter; record
-publication, R2, a public capture format and replay runtime remain unimplemented.
+backends. Ownership registration has a native-pgx PostgreSQL adapter and immutable
+objects
+have an AWS SDK v2 R2 adapter. Record publication, a public capture format and replay
+runtime remain unimplemented.
 Its tests model failures rather than establish remote durability.
 An internal ownership-registration coordinator shares its binding contract with
 owner-aware publication and explicit project-reader lookups. Controlled capabilities
@@ -100,8 +102,10 @@ The scoped mapping investigation and next unresolved choice are described in
 One Go process owns ingest, storage, queries and replay orchestration. The agreed
 first version uses PostgreSQL for the authoritative catalog and R2 for immutable
 objects. Both stores hold required durable state: listing R2 objects cannot recover
-which objects PostgreSQL accepted. Neither remote backend has been provisioned; registration tests use disposable
-local PostgreSQL. A catalog
+which objects PostgreSQL accepted. Neither remote backend has been provisioned;
+registration tests use disposable
+local PostgreSQL and object tests drive the SDK through controlled HTTP peers.
+The [object contract](OBJECTS.md) specifies immutable writes and bounded reads. A catalog
 on the sole ingest machine would violate the machine-loss requirement. The first
 storage experiment must include a recoverable metadata placement and recovery test.
 

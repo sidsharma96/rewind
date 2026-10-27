@@ -1,8 +1,9 @@
 # First ingest coordination experiment
 
 Status: implemented as an internal coordinator with controlled test backends.
-PostgreSQL and R2 are the chosen architecture, but adapters and remote infrastructure
-do not exist yet.
+PostgreSQL and R2 are the chosen architecture. Internal adapters now cover
+ownership registration and immutable objects; record publication and remote
+infrastructure do not exist yet.
 This experiment implements the ordering and error handling with controlled test
 backends. It cannot establish provider durability, SQL isolation or recovery after
 real host loss. It adds no public endpoint, wire format or shared storage library.
@@ -53,9 +54,10 @@ writer can change the result before final publication, which checks state again.
 
 The object store capability creates an immutable object or confirms an identical
 object already exists. It must not overwrite different bytes. Its success requires
-completed durable bytes and verified integrity; a future adapter must demonstrate
+completed durable bytes and verified integrity; the adapter must demonstrate
 this contract with the actual provider. A tenant and SHA-256 digest identify an
-object logically; no bucket naming scheme is chosen here. The digest is not span
+object logically; the [R2 adapter](OBJECTS.md) supplies the versioned, hex-encoded
+tenant namespace. The digest is not span
 identity. Identical bytes in different spans still produce separate catalog entries.
 
 Immutable bytes could later be cached within a tenant after authorization. A cache
