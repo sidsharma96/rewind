@@ -4,8 +4,11 @@ Status: matched and unmatched capture use the same normal retention policy. Miss
 span metadata does not shorten a capture's lifetime. A later match or identical retry
 must not create a new acceptance time or reset its deadline. The selected configurable
 default for expired-record markers is 24 hours after payload expiry. This is not the
-payload-retention duration. No payload duration, clock/epoch representation, expiry
-mechanism or quota implementation is selected.
+payload-retention duration. The selected payload default is seven elapsed days
+(168 hours) from each span or capture record's first authoritative acceptance.
+Both durations are trusted configurable policy; normal retries and later matches
+preserve original deadlines. Clock/epoch representation, automatic expiry,
+reclamation and quotas remain unimplemented.
 The local implementation classifies deadlines and propagates confirmed catalog
 expiry refusals in controlled tests. The current coordinator has no deletion
 operation, authoritative expiry clock or durable lifetime metadata.
@@ -18,7 +21,7 @@ Quota exhaustion must refuse new admissions according to an explicit contract,
 rather than silently evict accepted records to make room. Admission byte/operation
 limits currently do not bound accumulated durable data or unpublished objects.
 
-Once expiry is designed, three operations need separate contracts: deciding that a
+Three operations still need separate backend contracts: deciding that a
 record is no longer available, retaining enough identity metadata to handle retries,
 and reclaiming bytes that no live reference, reader or in-flight writer still needs.
 Deleting a catalog row does not by itself prove its object is safe to remove. Span
@@ -33,6 +36,13 @@ from captured contents and producer-supplied span timestamps. The existing catal
 interface returns only a reference/duplicate result; it does not persist timestamps
 or expiry receipts. Design its next contract before adding timestamp fields or a
 persisted schema.
+
+`DefaultPayloadRetention` supplies the seven-day policy constant. A future catalog
+can derive `acceptedAt.Add(payloadRetention)` and pass that expiry plus its marker
+window to `NewLifetime`. It must do this only on first acceptance, not on a retry.
+Span accepted on Monday and capture accepted on Tuesday have separate seven-day
+lifetimes; capture arrival does not extend the span. The constant does not run a
+clock or change the existing controlled catalog into an automatic expiry service.
 
 ## Identity after payload expiry
 

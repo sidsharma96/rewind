@@ -112,7 +112,10 @@ then acquire the project gate exclusively in a separate policy transaction, veri
 the same original completion/deadline and persist closure. Never upgrade a shared
 lock in place. Closure is established only after that commit is confirmed; earlier
 ordered decisions are not undone. Exact admission/commit timing, timestamp encoding
-and retention configuration remain open. This does not establish remote durability.
+and retention configuration plumbing remain open. The selected payload default is
+seven elapsed days from each record's first authoritative acceptance, followed by
+24 hours of expired identity recognition; retries preserve both deadlines. Neither
+duration is an automatic cleanup mechanism. This does not establish remote durability.
 
 ## Cost, alternative and evidence
 
