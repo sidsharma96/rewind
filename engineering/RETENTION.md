@@ -7,8 +7,9 @@ default for expired-record markers is 24 hours after payload expiry. This is not
 payload-retention duration. The selected payload default is seven elapsed days
 (168 hours) from each span or capture record's first authoritative acceptance.
 Both durations are trusted configurable policy; normal retries and later matches
-preserve original deadlines. Clock/epoch representation, automatic expiry,
-reclamation and quotas remain unimplemented.
+preserve original deadlines. Native catalog dates use PostgreSQL timestamptz.
+Public record encoding, an autonomous expiry worker, reclamation and quotas remain
+unimplemented.
 The local implementation classifies deadlines and propagates confirmed catalog
 expiry refusals in controlled tests. The current coordinator has no deletion
 operation, authoritative expiry clock or durable lifetime metadata.
@@ -130,8 +131,9 @@ but accumulate indefinitely. Do not claim permanent duplicate protection from a
 finite marker window. After marker removal, recognition of an old identity is no
 longer guaranteed. The choice trades a finite metadata lifetime for that explicit
 limit. Configuration changes must not silently reconstruct deadlines of existing
-records; define policy changes separately. No service configuration or persisted
-deadline schema is implemented yet.
+records; define policy changes separately. Fresh schemas now hold original record
+deadlines for Lookup; a public policy-control API, migrations and cleanup remain
+unimplemented.
 
 ## Local classification and catalog refusal experiment
 
