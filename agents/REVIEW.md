@@ -73,3 +73,12 @@ the PR head still match the reviewed/tested inputs, and merge with the expected
 head SHA. A green local status does not authorize a different commit or stale base.
 Preserve user changes and remove the temporary clone after saving its evidence.
 Revisit hosted CI or a dedicated runner when continuous verification is needed.
+
+After a confirmed merge, verify the remote PR head/merge commit, delete the upstream
+feature branch if it still matches that head, and fetch with pruning. Switch to the
+updated target branch before deleting the local feature branch. Verify its tip has
+not moved and is not checked out in another worktree. For squash merges, the
+original tip is not an ancestor: a forced local branch deletion is allowed only
+after exact PR-head and merged-target evidence establish that it is the reviewed
+work. Preserve any later commits. Verify both refs are gone; a merge flag alone is
+not evidence that cleanup completed.

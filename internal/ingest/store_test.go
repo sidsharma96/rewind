@@ -111,8 +111,8 @@ type creatorGrant struct {
 
 type modelCatalog struct {
 	mu                 sync.Mutex
-	rows               map[Identity]Reference
-	attribution        map[Identity]Attribution
+	rows               map[Identity]Receipt
+	retention          time.Duration
 	bindings           map[Execution]Registration
 	writers            map[writerGrant]bool
 	readers            map[readerGrant]bool
@@ -153,9 +153,10 @@ func (m *modelCatalog) recordValid(id Identity) error {
 	if _, exists := m.rows[id]; !exists {
 		return nil
 	}
-	a := m.attribution[id]
+	record := m.rows[id]
+	a := record.Attribution
 	reg, exists := m.bindings[executionOf(id)]
-	if !validAttribution(a) || !exists || reg.Owner != a.Owner {
+	if !validAttribution(a) || !exists || reg.Owner != a.Owner || !validReceiptTimes(record) {
 		return ErrIntegrity
 	}
 	return nil
@@ -216,15 +217,17 @@ func (m *modelCatalog) Publish(ctx context.Context, ref Reference, a Attribution
 		return Receipt{}, err
 	}
 	old, duplicate := m.rows[ref.Identity]
-	if duplicate && old != ref {
+	if duplicate && old.Reference != ref {
 		m.mu.Unlock()
 		return Receipt{}, ErrConflict
 	}
 	if !duplicate {
-		m.rows[ref.Identity] = ref
-		m.attribution[ref.Identity] = a
+		accepted := m.now.UTC()
+		m.rows[ref.Identity] = Receipt{Reference: ref, Attribution: a,
+			AcceptedAt: accepted, ExpiresAt: accepted.Add(m.retention)}
 	}
-	receipt := Receipt{Reference: ref, Attribution: m.attribution[ref.Identity], Duplicate: duplicate}
+	receipt := m.rows[ref.Identity]
+	receipt.Duplicate = duplicate
 	m.mu.Unlock()
 	if m.afterPublish != nil {
 		if err := m.afterPublish(ctx); err != nil {
@@ -265,8 +268,7 @@ func (m *modelCatalog) Lookup(ctx context.Context, id Identity, principal string
 		m.mu.Unlock()
 		return Receipt{}, err
 	}
-	ref, exists := m.rows[id]
-	receipt := Receipt{Reference: ref, Attribution: m.attribution[id]}
+	receipt, exists := m.rows[id]
 	m.mu.Unlock()
 	if m.afterLookup != nil {
 		m.afterLookup()
@@ -355,7 +357,7 @@ func (m *modelCatalog) count() int {
 }
 
 func newModelCatalog() *modelCatalog {
-	return &modelCatalog{rows: make(map[Identity]Reference), attribution: make(map[Identity]Attribution),
+	return &modelCatalog{rows: make(map[Identity]Receipt), retention: DefaultPayloadRetention,
 		bindings: make(map[Execution]Registration), writers: make(map[writerGrant]bool), readers: make(map[readerGrant]bool),
 		runs: make(map[runKey]RunAdmission), creators: make(map[creatorGrant]bool),
 		now: time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)}

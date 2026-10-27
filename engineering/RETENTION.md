@@ -29,13 +29,22 @@ and capture can share an object within a tenant, as can separate executions with
 identical bytes. No ingest-host timer or negative lookup establishes global absence
 of future publication. No cleanup protocol is approved here.
 
-The authoritative catalog must eventually preserve the original acceptance result
-across duplicate retries and lost commit replies, including whatever retention
-metadata the selected policy requires. Keep that server-owned metadata separate
-from captured contents and producer-supplied span timestamps. The existing catalog
-interface returns only a reference/duplicate result; it does not persist timestamps
-or expiry receipts. Design its next contract before adding timestamp fields or a
-persisted schema.
+The selected receipt includes catalog-owned `AcceptedAt` and `ExpiresAt` times,
+separate from captured contents and producer-supplied span timestamps. Each first
+acceptance records them with its reference and original attribution; successful
+identical retries and lookups return those original values. Changing trusted
+retention configuration affects new records only. Lookup still requires explicit
+project-reader permission; receipt metadata grants no permission.
+
+The coordinator requires both times to be specified and expiry to
+be strictly later than acceptance. A malformed successful publication returns
+uncertain plus integrity failure, because acceptance may already have committed.
+A malformed lookup returns integrity failure before object access. The coordinator
+does not compare these times with its local clock or require the current default
+retention duration: another host's clock or changed policy must not invalidate an
+original receipt. This is an internal result contract, not an HTTP/OTLP encoding,
+SQL schema or implemented expiry service. Controlled tests supply a catalog
+clock and preserve original times; native record persistence remains future work.
 
 `DefaultPayloadRetention` supplies the seven-day policy constant. A future catalog
 can derive `acceptedAt.Add(payloadRetention)` and pass that expiry plus its marker

@@ -66,7 +66,11 @@ use the same normal retention policy; matching or identical retries do not reset
 capture's deadline. Span and capture each use a configurable seven elapsed days
 from their own first authoritative acceptance. Expired-record markers have a configurable default window of
 24 hours after payload expiry; after marker removal, old-identity recognition is
-not guaranteed. Rewind must enforce authenticated producer/execution ownership in
+not guaranteed. Save receipts now carry original catalog-owned AcceptedAt and
+ExpiresAt instants. The coordinator validates their ordering and returns them
+unchanged on retries; controlled tests keep both with the original reference and
+attribution. Native SQL record persistence and a public receipt encoding remain
+unimplemented. Rewind must enforce authenticated producer/execution ownership in
 the first working version, with writing authority scoped to one agent instance
 in one run in one project, as described in [the capture design](CAPTURE.md#producer-authority).
 Trusted catalog registration is the selected ownership binding. The local Registrar
