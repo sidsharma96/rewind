@@ -73,9 +73,51 @@ state is an error, never an allow or a fabricated absence.
 
 The read permission check orders authorization with catalog lookup. It does not
 cancel a read already authorized or recall bytes already returned. This is not a
-global kill switch. Credential expiry, revocation propagation, active-run shutdown
-and queued delivery after a run ends remain unresolved; tests of controlled grant
-changes do not choose those policies.
+global kill switch. Credential expiry, revocation propagation and active-run shutdown
+remain unresolved. The selected normal-completion delivery policy is described below;
+tests of controlled grant changes do not implement that lifecycle.
+
+## Run completion and delayed delivery
+
+Selected policy, not implemented: normal completion closes new execution registration
+and starts a finite delivery window for already registered calls. Authorized direct
+writers and explicitly delegated collectors can deliver span or capture during that
+window; the same owner and current-grant checks still apply. No collector-only
+bypass or transfer of ownership is introduced. The window's duration is awaiting
+the user's choice; no default has been selected.
+
+An optional collector gathers records, queues or batches delivery and retries
+failures. It does not become the execution owner. Finishing the producer's work
+does not establish that every record has reached Rewind. There is no collector
+integration or run-completion operation yet.
+
+| Run condition | New call registration | Delivery for an existing binding |
+| --- | --- | --- |
+| Running | Allowed with existing creator permission | Allowed with existing writer permission |
+| Completed normally, before the delivery deadline | Closed | Allowed with existing writer permission |
+| Delivery deadline reached | Closed | Closed |
+| Explicitly revoked | Closed | Closed immediately at the authoritative operation boundary |
+
+The trusted catalog must establish completion and its fixed deadline together.
+Producer timestamps cannot move that deadline. Repeated completion or delivery
+must not extend it; revocation cannot reopen it. A write that begins before the
+deadline but reaches publication after it must be refused, possibly leaving an
+uploaded object. Checking only at upload admission is insufficient. An identical
+record retry still needs delivery permission, even if the record was accepted earlier.
+
+This policy does not extend payload retention, expired-record markers, credentials
+or grants. It does not grant read access or delete accepted records. Registering a
+call beforehand does not prove its delivered contents were produced before normal
+completion. A bounded window deliberately permits authorized new evidence for those
+existing bindings. Explicit revocation overrides the remaining delivery window;
+it does not recall reads, terminate agents or cut external credentials by itself.
+
+Compared with closing submissions immediately on normal completion, the window
+reduces rejection of delayed evidence but retains submission authority for longer.
+It cannot guarantee that every collector queue empties before the deadline. Revisit
+its duration against observed queue age, retry budgets, publication latency and
+acceptable authority duration. Catalog clock/isolation rules, trusted lifecycle
+control and the behavior of registration retries still need an implementation design.
 
 For n record bytes, retain O(n) copy/hash work and transient memory. Each permitted
 write uses one preliminary catalog operation, one object create of n bytes, and one
