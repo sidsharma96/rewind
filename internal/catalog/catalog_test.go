@@ -383,7 +383,7 @@ func TestBackendErrorRedactionAndClassification(t *testing.T) {
 	if strings.Contains(err.Error(), cause.Error()) || !errors.Is(err, cause) {
 		t.Fatal("provider text exposed or cause lost")
 	}
-	for _, cause := range []error{ingest.ErrDenied, ingest.ErrOwnershipConflict, ingest.ErrExpired} {
+	for _, cause := range []error{ingest.ErrDenied, ingest.ErrOwnershipConflict, ingest.ErrExpired, ingest.ErrNotFound, ingest.ErrConflict} {
 		if errors.Is(backend("unexpected driver failure", cause), cause) {
 			t.Fatal("unexpected failure classified as confirmed refusal")
 		}

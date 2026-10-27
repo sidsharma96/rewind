@@ -1,8 +1,11 @@
 # Ownership at record acceptance
 
 Status: implemented as internal coordination with controlled test capabilities. It exercises
-already selected producer ownership and explicit project-reader rules; it selects
-no credential format, grant lifetime, endpoint or database schema.
+already selected producer ownership and explicit project-reader rules. Native
+PostgreSQL Lookup now checks an exact project-reader grant and validates saved
+record ownership. Accepted rows are seeded by trusted tests; record publication
+still uses controlled backends. No credential format, grant lifecycle or endpoint
+is selected here.
 
 Alice owns call 42. A trusted host registers its tenant/trace/span to Alice's
 run/instance before either record arrives. Bob has writing permission for his own
@@ -52,8 +55,8 @@ The record catalog has three operations:
 Registration and record publication must share authoritative binding state in a real
 adapter. No publication may create a missing binding, accept a mismatched owner or
 retroactively attribute a legacy tenant-only record. Missing/invalid attribution in
-an existing row fails closed. Existing experiments contain synthetic process-local
-state only; there is no deployed dataset to migrate.
+an existing row fails closed. Native read tests use synthetic state in disposable PostgreSQL; there is no deployed
+accepted-record dataset to migrate.
 
 Confirmed denial is an explicit error and must not be wrapped as an uncertain
 publication. An arbitrary catalog failure may hide a commit and stays uncertain.
