@@ -53,8 +53,12 @@ type RegistrationAuthorizer interface {
 // OwnershipCatalog atomically creates an immutable execution-to-owner binding or
 // returns the original registration for an identical execution/owner retry. A
 // retry by another authorized registrar preserves the original RegisteredBy.
-// Different owners return ErrOwnershipConflict without changing the original.
-// All other errors may hide a committed registration. The adapter must enforce
+// Run admission and current creator permission are checked atomically before any
+// outcome. During normal-completion drain, only an identical execution/owner retry
+// is permitted. Deadline closure, revocation and unknown run state refuse it.
+// A proposal cannot bypass an existing binding's run by naming a different run.
+// ErrDenied and ErrOwnershipConflict confirm refusal of this attempt without
+// changing the original; other errors may hide a committed registration. Enforce
 // applicable authoritative registration permissions before returning an outcome.
 // Success requires durable recovery of the binding and original attribution.
 // Implementations honor cancellation, are safe for concurrent calls and must not
@@ -82,7 +86,8 @@ func NewRegistrar(authorizer RegistrationAuthorizer, catalog OwnershipCatalog, m
 
 // Register establishes ownership before either record kind arrives. It does not
 // upload bytes or publish span metadata. Store enforces the binding through
-// its separate record catalog capability. An error is not proof that an earlier attempt did not register the call.
+// its separate record catalog capability. An error is not proof that an earlier
+// attempt did not register the call.
 func (r *Registrar) Register(ctx context.Context, execution Execution, owner Owner) (RegistrationReceipt, error) {
 	for _, part := range []string{execution.Tenant, execution.Trace, execution.Span, owner.Run, owner.Instance} {
 		if !validRegistrationID(part) {
@@ -112,7 +117,7 @@ func (r *Registrar) Register(ctx context.Context, execution Execution, owner Own
 	proposed := Registration{Execution: execution, Owner: owner, RegisteredBy: principal}
 	original, duplicate, err := r.catalog.RegisterOwnership(ctx, proposed)
 	if err != nil {
-		if errors.Is(err, ErrOwnershipConflict) {
+		if errors.Is(err, ErrOwnershipConflict) || errors.Is(err, ErrDenied) {
 			return RegistrationReceipt{}, fmt.Errorf("register execution owner: %w", err)
 		}
 		return RegistrationReceipt{}, fmt.Errorf("register execution owner: %w", errors.Join(ErrRegistrationUncertain, err))

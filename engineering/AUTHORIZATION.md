@@ -119,7 +119,11 @@ reduces rejection of delayed evidence but retains submission authority for longe
 It cannot guarantee that every collector queue empties before the deadline. Revisit
 its duration against observed queue age, retry budgets, publication latency and
 acceptable authority duration. Catalog clock/isolation rules, trusted lifecycle
-control and the behavior of registration retries still need an implementation design.
+authenticated control still needs an implementation design. The selected registration retry rule
+permits an authorized identical existing binding during the open delivery window.
+It returns the original registrar without adding a binding or moving the deadline.
+New or changed bindings are refused after normal completion. At the deadline or
+after revocation, registration retries are refused too.
 
 The implemented internal slice is a fixed `DeliveryWindow` value, constructed from
 a trusted completion instant and an explicit positive duration. Its default constant
@@ -132,10 +136,51 @@ It is not a persisted encoding or a real run lifecycle.
 A controlled catalog uses this value under its existing mutex after owner/grant
 checks at CheckWrite and Publish. Tests move a supplied time during upload,
 check both span and capture, and remove the grant during the window. This isolates
-the deadline rule without deciding registration-retry responses or introducing a
-new lifecycle endpoint. The model leaves reads and original attribution intact.
-New-registration closure and trusted completion/revocation operations remain future
-integration, not guarantees established by this value.
+the deadline rule without introducing a new lifecycle endpoint. The joined run
+admission below now exercises registration retries too. The model leaves reads and original attribution intact.
+Trusted completion/revocation operations remain future integration, not guarantees
+established by this value.
+
+The implemented internal slice adds a concrete `RunAdmission` value: explicitly running,
+normally completed with an original DeliveryWindow, or revoked. Its operations
+complete a running value once, preserve that original completion on retries, revoke
+without reopening, and check record or registration admission at a supplied instant.
+Zero/unknown state fails closed. It is a value owned by a catalog operation, not a
+concurrent state holder or a trusted controller. No new endpoint, run-control grant,
+credential, automatic clock or provider encoding is selected.
+
+The combined controlled catalog keeps known project/run states and exact
+creator grants alongside bindings. Under one mutex, registration must check current
+creator permission and both applicable run states before returning duplicate or
+conflict outcomes or creating a binding. An existing binding's run cannot be
+bypassed by proposing an owner in a different running run. Only an identical
+execution/owner retry is admitted during the completed run's open window; otherwise
+it is refused. Original registrar attribution remains unchanged. A running run may
+create a new binding. Unknown or revoked runs refuse every registration attempt.
+
+CheckWrite and Publish consult the same run state after owner/grant checks.
+The previous test-only window hook is replaced by that operation. Reads still
+use their independent grants. The trusted test fixture installs completion or
+revocation while holding the same catalog mutex; this does not implement an
+authenticated lifecycle controller. A deadline remains a supplied-time comparison,
+so real catalog clock rollback, isolation, durable state and recovery remain open.
+
+Confirmed `ErrDenied` from registration means refusal of this attempt, like a
+confirmed ownership conflict. Registrar must not add ErrRegistrationUncertain to
+that result. Every other catalog error may hide a commit. Missing grants/state or
+deadline closure must be checked before revealing duplicate/conflict outcomes;
+permission-state unavailability remains an error rather than absence or permission.
+
+The admission value uses O(1) time/space and adds no object calls. The controlled
+catalog adds known-run and creator-grant maps with expected constant-time operations
+under its existing mutex, not a worst-case performance guarantee. Total model state is O(E + G + R + U)
+entries for executions, grants, records and known runs; active admission does not
+bound those accumulated entries. Registration uses
+one catalog operation and no object bytes; it checks at most the proposed and
+original run. Tests compare running, draining, deadline and revoked states on
+the same lost-reply/retry workload and force completion/revocation between initial
+authorization and the final atomic operation. A single precheck followed by the old
+registration write would admit a new call after completion and is insufficient.
 
 For a run completed at 12:00 with the default duration, publication at 12:09:59 is
 eligible and publication at 12:10 is refused. An upload that starts at 12:09:59 but

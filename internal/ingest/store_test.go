@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 var sampleID = Identity{Tenant: "tenant-a", Trace: "trace-1", Span: "span-42"}
@@ -101,25 +102,36 @@ type writerGrant struct {
 }
 
 type readerGrant struct{ Tenant, Principal string }
+type runKey struct{ Tenant, Run string }
+type creatorGrant struct {
+	Execution Execution
+	Owner     Owner
+	Principal string
+}
 
 type modelCatalog struct {
-	mu            sync.Mutex
-	rows          map[Identity]Reference
-	attribution   map[Identity]Attribution
-	bindings      map[Execution]Registration
-	writers       map[writerGrant]bool
-	readers       map[readerGrant]bool
-	publications  atomic.Int64
-	lookups       atomic.Int64
-	beforePublish func(context.Context) error
-	afterPublish  func(context.Context) error
-	lookupErr     error
-	changeLookup  func(Reference) Reference
-	changeReceipt func(Receipt) Receipt
-	afterLookup   func()
-	expiry        func(Identity) error // sequential clock fixture only; called under mu
-	policyErr     error
-	writeWindow   func(Identity, Attribution) error // controlled lifecycle predicate; called under mu
+	mu                 sync.Mutex
+	rows               map[Identity]Reference
+	attribution        map[Identity]Attribution
+	bindings           map[Execution]Registration
+	writers            map[writerGrant]bool
+	readers            map[readerGrant]bool
+	runs               map[runKey]RunAdmission
+	creators           map[creatorGrant]bool
+	now                time.Time
+	registrations      atomic.Int64
+	beforeRegistration func(context.Context) error
+	afterRegistration  func(context.Context) error
+	publications       atomic.Int64
+	lookups            atomic.Int64
+	beforePublish      func(context.Context) error
+	afterPublish       func(context.Context) error
+	lookupErr          error
+	changeLookup       func(Reference) Reference
+	changeReceipt      func(Receipt) Receipt
+	afterLookup        func()
+	expiry             func(Identity) error // sequential clock fixture only; called under mu
+	policyErr          error
 }
 
 func (m *modelCatalog) writerAllowed(id Identity, a Attribution) error {
@@ -130,10 +142,11 @@ func (m *modelCatalog) writerAllowed(id Identity, a Attribution) error {
 	if !exists || reg.Owner != a.Owner || !m.writers[writerGrant{id.Tenant, a}] {
 		return ErrDenied
 	}
-	if m.writeWindow != nil {
-		return m.writeWindow(id, a)
+	run, exists := m.runs[runKey{id.Tenant, a.Owner.Run}]
+	if !exists {
+		return ErrDenied
 	}
-	return nil
+	return run.CheckRecord(m.now)
 }
 
 func (m *modelCatalog) recordValid(id Identity) error {
@@ -273,14 +286,54 @@ func (m *modelCatalog) Lookup(ctx context.Context, id Identity, principal string
 // Registration uses the same mutex and binding state as publication. The
 // independent Registrar tests also have a smaller registration-only fixture.
 func (m *modelCatalog) RegisterOwnership(ctx context.Context, proposed Registration) (Registration, bool, error) {
+	m.registrations.Add(1)
+	if m.beforeRegistration != nil {
+		if err := m.beforeRegistration(ctx); err != nil {
+			return Registration{}, false, err
+		}
+	}
+	// The locked helper makes the lifecycle check and binding outcome one operation.
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	original, duplicate, err := m.registerLocked(ctx, proposed)
+	m.mu.Unlock()
+	if err != nil {
+		return Registration{}, false, err
+	}
+	if m.afterRegistration != nil {
+		if err := m.afterRegistration(ctx); err != nil {
+			return Registration{}, false, err
+		}
+	}
+	return original, duplicate, nil
+}
+
+func (m *modelCatalog) registerLocked(ctx context.Context, proposed Registration) (Registration, bool, error) {
 	if err := ctx.Err(); err != nil {
 		return Registration{}, false, err
 	}
+	if m.policyErr != nil {
+		return Registration{}, false, m.policyErr
+	}
+	if !m.creators[creatorGrant{proposed.Execution, proposed.Owner, proposed.RegisteredBy}] {
+		return Registration{}, false, ErrDenied
+	}
 	old, exists := m.bindings[proposed.Execution]
+	identical := exists && old.Owner == proposed.Owner
+	keys := []runKey{{proposed.Execution.Tenant, proposed.Owner.Run}}
+	if exists && old.Owner.Run != proposed.Owner.Run {
+		keys = append(keys, runKey{old.Execution.Tenant, old.Owner.Run})
+	}
+	for _, key := range keys {
+		run, known := m.runs[key]
+		if !known {
+			return Registration{}, false, ErrDenied
+		}
+		if err := run.CheckRegistration(m.now, identical); err != nil {
+			return Registration{}, false, err
+		}
+	}
 	if exists {
-		if old.Owner != proposed.Owner {
+		if !identical {
 			return Registration{}, false, ErrOwnershipConflict
 		}
 		return old, true, nil
@@ -303,11 +356,20 @@ func (m *modelCatalog) count() int {
 
 func newModelCatalog() *modelCatalog {
 	return &modelCatalog{rows: make(map[Identity]Reference), attribution: make(map[Identity]Attribution),
-		bindings: make(map[Execution]Registration), writers: make(map[writerGrant]bool), readers: make(map[readerGrant]bool)}
+		bindings: make(map[Execution]Registration), writers: make(map[writerGrant]bool), readers: make(map[readerGrant]bool),
+		runs: make(map[runKey]RunAdmission), creators: make(map[creatorGrant]bool),
+		now: time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC)}
 }
 
 func provision(t *testing.T, c *modelCatalog, id Identity, a Attribution) {
 	t.Helper()
+	c.mu.Lock()
+	key := runKey{id.Tenant, a.Owner.Run}
+	if _, exists := c.runs[key]; !exists {
+		c.runs[key] = NewRunAdmission()
+	}
+	c.creators[creatorGrant{executionOf(id), a.Owner, "trusted-host-1"}] = true
+	c.mu.Unlock()
 	registrar := newRegistrar(t, trustedRegistrar("trusted-host-1"), c, 1)
 	if _, err := registrar.Register(t.Context(), executionOf(id), a.Owner); err != nil {
 		t.Fatal(err)
