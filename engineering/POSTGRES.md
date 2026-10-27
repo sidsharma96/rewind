@@ -1,0 +1,143 @@
+# PostgreSQL catalog coordination
+
+Status: selected design, not a catalog adapter. Rewind will use native pgx and
+plain SQL. The current module still has no database dependency or persistent
+backend. A disposable PostgreSQL probe exercises the locking mechanics below;
+it does not implement the catalog's full authorization or acceptance rules.
+
+## Different calls may proceed together
+
+Alice saves call 42 while Bob saves call 99 in the same project. Both may make
+catalog decisions concurrently. Two attempts to change call 42 must take turns.
+A permission change must be ordered with both decisions, so a removed grant
+cannot fit between a check and acceptance.
+
+Use a durable gate row per known project. Ordinary catalog transactions lock that
+row `FOR SHARE`, then lock their execution binding `FOR UPDATE` before making
+record mutations. The binding key is project/trace/span; span and capture share
+that lock but remain separately accepted records. Neither requires its peer.
+All grants and run-state changes lock the project row `FOR UPDATE` first.
+
+```text
+record transaction:   shared project gate -> call binding -> checks -> commit
+another call:         shared project gate -> other binding -> checks -> commit
+policy transaction: exclusive project gate -> change policy -> commit
+
+object upload/read: outside every catalog transaction
+```
+
+This is pessimistic locking: reserve access before deciding, rather than detect a
+competing change afterward and retry. Shared project locks coexist. The exclusive
+policy lock waits for admitted catalog transactions to finish; a later ordinary
+transaction must observe the committed policy. A policy change is effective at
+its catalog commit, not when its request arrives. It does not cancel object
+uploads, terminate agents or recall bytes already read.
+
+## Order and visibility
+
+Use explicit `ReadCommitted` transactions. Acquire the project gate first, then
+use subsequent statements to read current grants. For record writes, acquire the
+binding before the final run, expiry and record decision. Check current owner and
+grant before exposing a duplicate, conflict, expiry or absence. A project-reader
+lookup checks its separate grant before disclosing record state; a shared binding
+lock can coordinate its read with mutations without excluding other readers.
+
+PostgreSQL takes a fresh Read Committed snapshot for each statement. A policy
+query started before waiting on the gate is insufficient; obtain the gate first
+and query policy afterward. Keep acquired locks until commit or rollback. Do not
+upgrade a shared project lock to exclusive inside an ordinary operation. A policy
+transaction takes the exclusive project lock from the outset and does not need
+to acquire call locks. Each record/registration operation concerns one project
+and one execution; multi-call transactions are outside this design.
+
+Every service path that changes grants, runs, bindings or accepted metadata must
+obey this convention, including trusted setup and future maintenance. Database
+access belongs to the service, not agent principals. Normal operations must not
+delete or recreate a project gate or execution binding. Their lifetime and cleanup
+need a separate design. An unknown project/run fails closed; ordinary record
+delivery cannot provision either or create ownership.
+
+## First registration has no row to lock
+
+`SELECT ... FOR UPDATE` does not lock a nonexistent binding. Registration needs
+the binding's unique project/trace/span constraint as well as row locking:
+
+1. Acquire the shared project gate and check the current exact creator permission.
+2. Tentatively insert the proposed complete binding with `ON CONFLICT DO NOTHING`.
+   This never updates an existing owner or original registrar. If another
+   registration is still deciding the same identity, the unique insertion waits.
+3. In a subsequent statement, read the resulting binding `FOR UPDATE`. Check both
+   original and proposed runs where they differ, and evaluate current admission
+   after acquiring the lock. Only then classify new, identical or changed ownership.
+4. Commit only an allowed result. Roll back a tentative new binding if run state,
+   deadline, legacy state or any other check refuses it. A completed run permits
+   only an identical existing binding, never a tentative new binding. Do not return
+   confirmed denial unless rollback/no-commit is established; unexpected errors
+   remain uncertain under the existing registration contract.
+
+Thus two first registrations cannot independently create owners. If the first
+commits, the second reads its original attribution; if it rolls back, the second
+can insert its own candidate and still must pass every check. This SQL mechanism
+does not replace the existing creator, both-run or legacy-unattributed rules.
+
+Record delivery locks an existing binding rather than inserting one. An authorized
+reader may find no binding/record and receive absence; writing authority is never
+inferred from that absence. Final Publish repeats the preliminary checks after
+upload. It saves the reference and original submitter together and leaves uncertain
+uploaded objects intact. A database transaction does not include the R2 write.
+
+## Waiting, time and failure
+
+Bound admitted operations and waiting time, pass cancellation through pgx, and
+release transactions/connections on every path. A pool bounds connections, not
+the number of callers waiting for them. Concrete admission and timeout settings
+still need implementation. Cancellation before confirmation cannot establish
+whether a commit happened; a confirmed commit remains successful if cancellation
+arrives afterward. There is no automatic retry worker in this direction.
+
+Deadline evaluation must follow lock acquisition. PostgreSQL's
+`current_timestamp`/`now()` report transaction-start time and can be stale after
+waiting. A fresh `clock_timestamp()` query avoids that particular error; it does
+not make wall time monotonic. Authoritative clock regression, durable closure,
+exact admission/commit timing, timestamp encoding and retention configuration
+remain separate unresolved contracts. This design selects none of them. No code
+may assume the locking choice settles deadline or remote durability guarantees.
+
+## Cost, alternative and evidence
+
+The simpler alternative is one exclusive gate for every operation in a project.
+It serializes unrelated calls and reader metadata lookups but needs fewer lock
+rules. The selected design permits independent call decisions at the cost of a
+binding lock, unique-insertion races and policy coordination. Project-wide policy
+changes still wait for active shared holders. There is no bounded revocation
+latency or throughput claim without bounded transactions and measurements.
+
+For P projects and E executions, gate and binding state occupy O(P + E) entries,
+in addition to grants, runs and accepted records. Indexed equality lookups have
+tree-search and possible storage I/O costs, not a constant-time map guarantee.
+Registration has a unique insert and a binding read; a record mutation locks an
+existing binding. Counts of actual queries, transferred rows, WAL bytes, waits
+and recovery work must be measured once the schema/adapter exists. The lock
+protocol adds no object requests and must never hold a database lock across R2.
+
+A disposable native-pgx probe on PostgreSQL 16.13 exercised different-call
+concurrency, same-call waiting, an exclusive policy change waiting for both shared
+holders, and a subsequent query seeing the removed grant. Simultaneous first
+registrations preserved one original registrar after commit; rolling back the
+first candidate let the waiting candidate insert. A synthetic cutoff sampled
+while a caller waited distinguished stale transaction-start time from a fresh
+database-clock comparison. Explicit barriers and PostgreSQL lock-wait observation
+established ordering; no sleep was used to infer it.
+
+These are mechanics observations, not full Rewind integration, authentication,
+benchmark, production deadlock analysis, clock-regression or recovery results.
+The database was local and disposable; no ingest-machine-loss guarantee was
+tested. Revisit lock granularity when representative same-call or policy-change
+waiting dominates, when batching requires multiple bindings, or when clock and
+cleanup rules require more shared mutable state. Preserve the simpler exclusive
+gate as a comparison baseline rather than claiming the chosen design is faster.
+
+Sources: [pgx native API](https://github.com/jackc/pgx/tree/v5.11.0),
+[PostgreSQL row locks](https://www.postgresql.org/docs/16/explicit-locking.html#LOCKING-ROWS),
+[Read Committed visibility](https://www.postgresql.org/docs/16/transaction-iso.html#XACT-READ-COMMITTED),
+and [current time functions](https://www.postgresql.org/docs/16/functions-datetime.html#FUNCTIONS-DATETIME-CURRENT).

@@ -98,6 +98,15 @@ which objects PostgreSQL accepted. Neither backend has been provisioned. A catal
 on the sole ingest machine would violate the machine-loss requirement. The first
 storage experiment must include a recoverable metadata placement and recovery test.
 
+Use native pgx with explicit SQL for the PostgreSQL adapter. The selected
+coordination is pessimistic locking with a shared project gate and an exclusive
+execution binding lock: different calls in a project may proceed concurrently;
+the same call's mutations take turns. Permission and run-state changes acquire
+the project gate exclusively. Object I/O stays outside these transactions.
+The [PostgreSQL design](POSTGRES.md) specifies the lock order, first-registration
+race and failure boundaries. This is an agreed direction, not an implemented
+adapter or a measured throughput result.
+
 The publication sequence is bounded admission and authorization, a preliminary
 catalog lookup, complete remote batch/payload writes, catalog commit including
 trace references, then acknowledgment. The lookup stops known expired identities
