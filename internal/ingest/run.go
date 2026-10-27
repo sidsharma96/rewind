@@ -8,12 +8,15 @@ const (
 	runRunning runPhase = iota + 1 // Zero is an unknown state, never permission.
 	runCompleted
 	runRevoked
+	runClosed
 )
 
 // RunAdmission is a catalog-owned value, not authentication or a concurrent run
 // controller. A catalog must serialize its updates with registration/publication,
 // persist original completion state, and supply an authoritative time. This value
-// supplies no clock, timer, credential lifetime, wire encoding or rollback defense.
+// supplies no clock, timer, credential lifetime or wire encoding. A saved closed
+// value refuses later delivery despite clock regression; an unsaved observation
+// or an unobserved clock jump does not establish that protection.
 type RunAdmission struct {
 	phase  runPhase
 	window DeliveryWindow
@@ -29,7 +32,7 @@ func (r RunAdmission) Complete(at time.Time, duration time.Duration) (RunAdmissi
 		return RunAdmission{}, ErrInvalid
 	}
 	switch r.phase {
-	case runCompleted:
+	case runCompleted, runClosed:
 		return r, nil
 	case runRevoked:
 		return RunAdmission{}, ErrDenied
@@ -52,6 +55,27 @@ func (r RunAdmission) Revoke() (RunAdmission, error) {
 	return r, nil
 }
 
+// CloseElapsed records elapsed delivery admission without conflating it with
+// emergency revocation. The caller must save the returned value atomically with
+// catalog policy, preserving it across retries/restarts. Merely checking a time
+// does not close anything. A wrong forward clock jump can close admission early.
+// Running values and observations before the deadline cannot establish closure.
+func (r RunAdmission) CloseElapsed(now time.Time) (RunAdmission, error) {
+	if !r.valid() || now.IsZero() {
+		return RunAdmission{}, ErrInvalid
+	}
+	switch r.phase {
+	case runClosed, runRevoked:
+		return r, nil
+	case runCompleted:
+		if !now.Before(r.window.until) {
+			r.phase = runClosed
+			return r, nil
+		}
+	}
+	return RunAdmission{}, ErrDenied
+}
+
 // CheckRecord checks only run admission. A valid result never replaces a
 // registered execution binding or a current submitter grant. Closed admission
 // returns ErrDenied before any acceptance, duplicate or conflict outcome.
@@ -62,7 +86,7 @@ func (r RunAdmission) CheckRecord(now time.Time) error {
 	switch r.phase {
 	case runRunning:
 		return nil
-	case runRevoked:
+	case runRevoked, runClosed:
 		return ErrDenied
 	default:
 		allowed, err := r.window.AllowsAt(now)
@@ -96,7 +120,7 @@ func (r RunAdmission) valid() bool {
 	switch r.phase {
 	case runRunning:
 		return r.window == (DeliveryWindow{})
-	case runCompleted:
+	case runCompleted, runClosed:
 		return validWindow
 	case runRevoked:
 		return r.window == (DeliveryWindow{}) || validWindow

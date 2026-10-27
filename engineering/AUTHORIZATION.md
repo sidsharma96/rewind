@@ -163,7 +163,15 @@ The previous test-only window hook is replaced by that operation. Reads still
 use their independent grants. The trusted test fixture installs completion or
 revocation while holding the same catalog mutex; this does not implement an
 authenticated lifecycle controller. A deadline remains a supplied-time comparison,
-so real catalog clock rollback, isolation, durable state and recovery remain open.
+so real catalog isolation, durable state and recovery remain open. The selected
+elapsed-closure policy is permanent once saved: the internal CloseElapsed operation
+returns an explicit closed value at/after the original deadline. The catalog must
+save that value; CheckRecord alone remains a pure predicate and changes no state.
+Completion/closure retries preserve closure and original timing. Revocation remains
+a distinct state. Controlled tests save closure, regress supplied time, replace
+coordinators and refuse record/registration retries while leaving reads intact.
+There is no automatic persistent closure operation yet. A false forward jump can
+close early; a backward jump before saved closure remains outside this protection.
 
 Confirmed `ErrDenied` from registration means refusal of this attempt, like a
 confirmed ownership conflict. Registrar must not add ErrRegistrationUncertain to
