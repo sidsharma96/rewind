@@ -1,8 +1,7 @@
 name: Checks
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Hosted minutes are exhausted. Commit-specific local verification is described
+  # in agents/REVIEW.md; retain this workflow for deliberate hosted runs.
   workflow_dispatch:
 permissions:
   contents: read

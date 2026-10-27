@@ -67,6 +67,9 @@ the first working version, with writing authority scoped to one agent instance
 in one run in one project, as described in [the capture design](CAPTURE.md#producer-authority).
 Trusted catalog registration is the selected ownership binding. The local Registrar
 exercises its retry/refusal contract, but Store does not enforce owner permissions.
+Read access requires an explicit project-reader permission across the project's
+span and capture records; producer write permission does not imply read permission.
+This policy is selected, not implemented by the tenant-only Store.
 Payload duration, cleanup, write/read authorization integration and combined query
 semantics remain to be designed. No expiry or quota mechanism exists yet.
 OTLP reception still needs its own bounded decoding, batch handling and
