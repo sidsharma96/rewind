@@ -19,7 +19,9 @@ planned behavior distinct from implemented behavior. The CLI is still only a
 command-line entry point. An internal ingest coordinator is exercised with controlled
 test backends; internal adapters cover PostgreSQL ownership registration and R2
 objects, but record publication, a public capture format and replay remain
-unimplemented. R2 tests use controlled HTTP peers, not provisioned R2.
+unimplemented. The private `rewind-dev` bucket exists; its scoped live probe passes
+creation/retry, conditional overwrite rejection, locally discarded PUT replies and
+fresh-client reads. This is not complete ingest-host-loss or catalog recovery.
 Do not claim those tests establish remote durability.
 
 ## Design and implementation

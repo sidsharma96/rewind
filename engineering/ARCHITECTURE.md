@@ -3,8 +3,7 @@
 This describes agreed contracts and implementation boundaries. The CLI provides
 help/version only. The internal ingest coordinator runs against controlled test
 backends. Ownership registration has a native-pgx PostgreSQL adapter and immutable
-objects
-have an AWS SDK v2 R2 adapter. Record publication, a public capture format and replay
+objects have an AWS SDK v2 R2 adapter. Record publication, a public capture format and replay
 runtime remain unimplemented.
 Its tests model failures rather than establish remote durability.
 An internal ownership-registration coordinator shares its binding contract with
@@ -102,9 +101,13 @@ The scoped mapping investigation and next unresolved choice are described in
 One Go process owns ingest, storage, queries and replay orchestration. The agreed
 first version uses PostgreSQL for the authoritative catalog and R2 for immutable
 objects. Both stores hold required durable state: listing R2 objects cannot recover
-which objects PostgreSQL accepted. Neither remote backend has been provisioned;
-registration tests use disposable
-local PostgreSQL and object tests drive the SDK through controlled HTTP peers.
+which objects PostgreSQL accepted. The private `rewind-dev` R2 bucket is
+provisioned; its scoped adapter probe passed creation/retry, conditional
+overwrite rejection, a locally discarded successful upload reply and fresh-client
+reads. No remote PostgreSQL
+catalog is provisioned. Registration tests use disposable local PostgreSQL and
+object fault tests drive the SDK through controlled HTTP peers. The live R2
+probe does not test the record catalog or replacement of the ingest host.
 The [object contract](OBJECTS.md) specifies immutable writes and bounded reads. A catalog
 on the sole ingest machine would violate the machine-loss requirement. The first
 storage experiment must include a recoverable metadata placement and recovery test.

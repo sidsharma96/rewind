@@ -27,6 +27,11 @@ The tests create fresh randomly named schemas and remove only those schemas.
 Without the variable, database tests skip; normal checks still require no database.
 Keep connection strings and credentials out of source and check logs.
 
+The optional [R2 probe](engineering/OBJECTS.md#opt-in-development-bucket-probe)
+needs S3 credentials restricted to the private `rewind-dev` bucket. It is disabled
+by default and retains two small synthetic objects in a new namespace on each run.
+Normal checks require no cloud access.
+
 Follow the [Go practices](engineering/GO.md). Keep changes focused and branch names
 descriptive, such as `batch-recovery`. Explain the problem, resulting behavior and
 relevant checks in a pull request. Include a concrete failure sequence when fixing

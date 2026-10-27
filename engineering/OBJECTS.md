@@ -1,8 +1,12 @@
 # Immutable R2 objects
 
-Status: internal adapter implemented and exercised against controlled HTTP peers;
-no R2 bucket or credentials are provisioned. AWS SDK for
-Go v2 is the selected client. This adapter implements `ingest.Objects`, not record
+Status: internal adapter exercised against controlled HTTP peers and the private
+`rewind-dev` R2 bucket. The scoped live probe passed creation/retry, conditional
+overwrite rejection, a locally discarded successful PUT reply and fresh-client
+reads of both original and reconciled bytes.
+Public r2.dev access is disabled, no custom domain is attached and no saved-object
+expiry rule is configured. The default unfinished-multipart abort rule is not
+accepted-record retention. AWS SDK for Go v2 is the selected client. This adapter implements `ingest.Objects`, not record
 acceptance, authentication, retention or a shared Concordance library.
 
 ## One write and its retry
@@ -78,13 +82,44 @@ Fault tests drive the real SDK through controlled HTTP responses: concurrent
 conditional writes, lost PUT reply, subsequent absence, replacement client,
 tenant separation, wrong bytes, huge XML/bodies, truncation, cancellation and body
 closure. Source/race checks plus independent design and implementation reviews are
-required. These tests establish adapter behavior against an emulator, not R2
-compatibility, provider durability or a complete remotely durable ingest system.
-A real R2 write/read/recovery experiment and remote catalog publication remain
-necessary before exposing acceptance.
+required. Controlled tests establish behavior against a modeled peer. The opt-in live
+probe also observed this small sequence on R2; neither establishes a complete
+remotely durable ingest system, host-loss recovery or failover. Remote catalog
+publication and combined recovery remain necessary before exposing acceptance.
 
 Sources: [R2 S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
 (conditional PUT is atomic against committed state), and
 [AWS SDK endpoint configuration](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/configure-endpoints.html).
 The same read/create/read sequence exists in Concordance's object adapter; no code
 is extracted until both applications have exercised their own recovery contract.
+
+## Opt-in development-bucket probe
+
+`TestR2LiveImmutableObjects` only targets `rewind-dev`. Supply
+`REWIND_R2_ENDPOINT`, `REWIND_R2_ACCESS_KEY_ID` and
+`REWIND_R2_SECRET_ACCESS_KEY` as explicit local environment variables. Use an R2
+Object Read & Write credential restricted to this bucket. The test accepts only
+the default HTTPS Cloudflare R2 account endpoint, blocks redirects, bounds the
+transport and does not discover credentials or load an environment file.
+Keep credentials and their local files out of logs and source history.
+
+```sh
+REWIND_R2_LIVE_TEST=1 go test -race -count=1 -v ./internal/objectstore \
+  -run '^TestR2LiveImmutableObjects$'
+```
+
+Predict the result before running: a new object and identical retry must read as
+the same bytes from a fresh client. A direct conditional PUT of wrong bytes to
+that saved key must return PreconditionFailed/412 and preserve the original.
+For a second object, a local wrapper closes and discards a successful real PUT
+response; Create must reconcile through GET, and another fresh client must read
+those bytes. The local response fault is not an actual provider outage.
+
+The test retains two small synthetic objects in a random tenant namespace and
+never lists or deletes objects or changes bucket settings. Later runs use new
+namespaces. The live test skips unless explicitly enabled; normal checks use
+controlled peers. The live pass covers the observed provider sequence, not
+machine loss, remote catalog publication, permanent immutability or failover.
+The S3 credential has storage privileges; it is not an agent execution credential.
+
+Credential setup: [Cloudflare R2 API tokens](https://developers.cloudflare.com/r2/api/tokens/).

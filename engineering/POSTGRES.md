@@ -2,8 +2,10 @@
 
 Status: ownership registration now has an internal native-pgx PostgreSQL adapter.
 Record CheckWrite/Publish/Lookup still use controlled backends; there is no public
-endpoint, real credential verification or R2 adapter. The first native integration
-tests use disposable PostgreSQL, not a remotely deployed production catalog.
+endpoint or real credential verification. R2 objects have a separate adapter,
+with a private development bucket and a passing scoped write/retry/read probe. The first
+native integration tests use disposable PostgreSQL, not a remotely deployed
+production catalog.
 
 ## Different calls may proceed together
 
