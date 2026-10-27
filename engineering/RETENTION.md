@@ -57,8 +57,10 @@ Remembering expiry cannot detect a clock jump that happens before any saved expi
 A false forward jump can permanently expire a record early; correcting the clock
 will not undo saved expiry. No object deletion follows from the flag. The original
 marker deadline is unchanged, and protection does not outlive identity removal.
-The local value and controlled tests exercise this transition; native SQL record storage,
-expiry transactions and automatic cleanup remain unimplemented. The simplest
+The local value and controlled tests exercise this transition. Native Lookup reads
+trusted seeded records and commits expiry with one exclusive restart after its
+shared read. SQL tests exercise expiry update/commit failure and fresh-pool reads;
+native record publication and automatic cleanup remain unimplemented. The simplest
 alternative, comparing only the current clock with expiry on every request, permits
 revival after a backward correction and was not selected.
 
@@ -92,8 +94,9 @@ A malformed lookup returns integrity failure before object access. The coordinat
 does not compare these times with its local clock or require the current default
 retention duration: another host's clock or changed policy must not invalidate an
 original receipt. This is an internal result contract, not an HTTP/OTLP encoding,
-SQL schema or implemented expiry service. Controlled tests supply a catalog
-clock and preserve original times; native record persistence remains future work.
+public record schema or autonomous expiry service. Controlled tests supply a catalog
+clock and preserve original times. Native SQL Lookup stores expiry on trusted
+seeded records; ordinary record publication remains future work.
 
 `DefaultPayloadRetention` supplies the seven-day policy constant. A future catalog
 can derive `acceptedAt.Add(payloadRetention)` and pass that expiry plus its marker

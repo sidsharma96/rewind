@@ -1,7 +1,7 @@
 # PostgreSQL catalog coordination
 
-Status: ownership registration now has an internal native-pgx PostgreSQL adapter.
-Record CheckWrite/Publish/Lookup still use controlled backends; there is no public
+Status: ownership registration and record Lookup have an internal native-pgx
+PostgreSQL adapter. Record CheckWrite/Publish still use controlled backends; there is no public
 endpoint or real credential verification. R2 objects have a separate adapter,
 with a private development bucket and a passing scoped write/retry/read probe. The first
 native integration tests use disposable PostgreSQL, not a remotely deployed
@@ -81,11 +81,33 @@ unimplemented. There is no schema migration or automatic expiry worker.
 
 Record operations must remember observed expiry while identity is retained, as
 specified in [retention](RETENTION.md#remember-confirmed-expiry). A reader cannot
-confirm expiry using a read-only clock comparison alone. The future Lookup path
-must serialize and commit the saved expired state after checking its reader grant.
-Do not upgrade a shared binding lock in place: choose a write-capable path from the
-start or release and retry with current checks. The concrete lookup locking strategy
-still needs a decision before the SQL record path is implemented.
+confirm expiry using a read-only clock comparison alone. Lookup
+uses shared binding locks for live or already saved expired records. On newly
+observed expiry, end the shared transaction and release all its locks, then restart
+once with an exclusive binding lock. Recheck the project-reader grant, binding,
+record and fresh database time; save expiry before confirming it. Do not upgrade
+shared locks in place. Carry one admission slot and one timeout across both attempts.
+There is no retry loop. Object reads stay outside both transactions.
+
+If the clock moves back before any expiry is saved, the exclusive attempt may find
+the record live and return its original receipt. If another attempt already saved
+expiry, the flag refuses it regardless of the new time. Permission removal between
+attempts must deny the second attempt before exposing state or changing expiry.
+Failed rollback prevents restart; failed or uncertain commit is an operational
+error, never a confirmed expiry. A shared live read need not repeat exclusively.
+
+The adapter implements Lookup, with required reader grants and saved
+record metadata in fresh schemas. Catalog still cannot satisfy ingest.Catalog
+until CheckWrite/Publish are implemented; Store cannot receive a partially protected
+adapter. Trusted SQL tests seed accepted records; ordinary Lookup cannot register
+owners or create accepted records. This is not an acceptance or recovery protocol.
+Persist kinds as explicit span/capture labels, digests as 32 bytes, size as a checked
+nonnegative bigint, bounded opaque owner/submitter IDs as bytea, and original catalog
+acceptance/expiry/marker instants as finite timestamptz values with increasing
+order. These catalog-owned clock values have PostgreSQL microsecond precision,
+like run deadlines; they do not encode or reduce precision of captured span times.
+A boolean remembers expiry; original receipts and both deadlines stay fixed.
+Publication must later choose these times once from trusted policy under its locks.
 
 ## First registration has no row to lock
 
@@ -155,8 +177,8 @@ duration is an automatic cleanup mechanism. This does not establish remote durab
 ## First native operation
 
 The concrete `internal/catalog` package uses native pgxpool and implements
-`ingest.OwnershipCatalog`; record
-CheckWrite/Publish/Lookup remain on controlled backends until a later slice. This
+`ingest.OwnershipCatalog` and a protected record Lookup; record
+CheckWrite/Publish remain on controlled backends until a later slice. This
 does not give Store a partially protected PostgreSQL path. There is no public
 endpoint or real credential verification.
 

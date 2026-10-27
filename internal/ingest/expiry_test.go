@@ -190,3 +190,18 @@ func TestDeniedRequestCannotSaveExpiry(t *testing.T) {
 		t.Fatal("unauthorized request saved expiry")
 	}
 }
+
+func TestRestoreLifetimePreservesSavedStateAndDeadlines(t *testing.T) {
+	original := testLifetime(t)
+	for _, expired := range []bool{false, true} {
+		saved, err := RestoreLifetime(original.PayloadExpiresAt(), original.MarkerUntil(), expired)
+		if err != nil || saved.Expired() != expired || !saved.PayloadExpiresAt().Equal(original.PayloadExpiresAt()) || !saved.MarkerUntil().Equal(original.MarkerUntil()) {
+			t.Fatal("restore changed saved lifetime")
+		}
+	}
+	for _, until := range []time.Time{time.Time{}, original.PayloadExpiresAt(), original.PayloadExpiresAt().Add(-time.Second), original.PayloadExpiresAt().AddDate(1000, 0, 0)} {
+		if _, err := RestoreLifetime(original.PayloadExpiresAt(), until, true); !errors.Is(err, ErrInvalid) {
+			t.Fatal("invalid saved lifetime restored")
+		}
+	}
+}

@@ -1,5 +1,6 @@
-// Package catalog supplies a PostgreSQL ownership-registration adapter. It does
-// not implement ingest.Catalog, credential verification, run controls or object I/O.
+// Package catalog supplies PostgreSQL ownership registration and record lookup.
+// It does not implement ingest.Catalog publication, credential verification, run
+// controls or object I/O.
 // The installed schema also stores each project's trusted retention policy.
 package catalog
 
@@ -59,7 +60,7 @@ func validSchema(s string) bool {
 }
 func (c *Catalog) table(name string) string { return pgx.Identifier{c.schema, name}.Sanitize() }
 
-// Install creates a NEW owned schema and its four required tables atomically.
+// Install creates a NEW owned schema and its required tables atomically.
 // Existing schemas are refused, never altered or dropped. Caller bounds ctx and
 // controls installation separately from serving requests; this is not migration.
 func Install(ctx context.Context, pool *pgxpool.Pool, schema string) error {
@@ -94,7 +95,7 @@ type backendError struct {
 func (e *backendError) Error() string { return "catalog: " + e.operation + " failed" }
 func (e *backendError) Unwrap() error {
 	// Provider/control failures must not masquerade as a confirmed domain refusal.
-	if errors.Is(e.cause, ingest.ErrDenied) || errors.Is(e.cause, ingest.ErrOwnershipConflict) || errors.Is(e.cause, ingest.ErrExpired) {
+	if errors.Is(e.cause, ingest.ErrDenied) || errors.Is(e.cause, ingest.ErrOwnershipConflict) || errors.Is(e.cause, ingest.ErrExpired) || errors.Is(e.cause, ingest.ErrNotFound) || errors.Is(e.cause, ingest.ErrConflict) {
 		return nil
 	}
 	return e.cause

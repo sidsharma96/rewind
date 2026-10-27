@@ -49,6 +49,17 @@ func NewLifetime(payloadExpiresAt time.Time, markerWindow time.Duration) (Lifeti
 	return Lifetime{payloadExpiresAt: expires, markerUntil: until}, nil
 }
 
+// RestoreLifetime validates saved original deadlines and remembered expiry. It does
+// not derive marker retention from current policy or consult a local clock.
+func RestoreLifetime(expires, until time.Time, expired bool) (Lifetime, error) {
+	l, err := NewLifetime(expires, until.Sub(expires))
+	if err != nil || until.IsZero() || !l.markerUntil.Equal(until) {
+		return Lifetime{}, ErrInvalid
+	}
+	l.expired = expired
+	return l, nil
+}
+
 func (l Lifetime) PayloadExpiresAt() time.Time { return l.payloadExpiresAt }
 func (l Lifetime) MarkerUntil() time.Time      { return l.markerUntil }
 

@@ -42,3 +42,26 @@ CREATE TABLE bindings (
     PRIMARY KEY (project, trace_id, span_id),
     FOREIGN KEY (project, run_id) REFERENCES runs(project, run_id)
 );
+CREATE TABLE reader_grants (
+    project bytea NOT NULL REFERENCES projects(id),
+    principal_id bytea NOT NULL CHECK (octet_length(principal_id) BETWEEN 1 AND 256),
+    PRIMARY KEY (project, principal_id)
+);
+CREATE TABLE records (
+    project bytea NOT NULL,
+    trace_id bytea NOT NULL,
+    span_id bytea NOT NULL,
+    kind text NOT NULL CHECK (kind IN ('span','capture')),
+    digest bytea NOT NULL CHECK (octet_length(digest) = 32),
+    size bigint NOT NULL CHECK (size >= 0),
+    owner_run bytea NOT NULL CHECK (octet_length(owner_run) BETWEEN 1 AND 256),
+    owner_instance bytea NOT NULL CHECK (octet_length(owner_instance) BETWEEN 1 AND 256),
+    submitted_by bytea NOT NULL CHECK (octet_length(submitted_by) BETWEEN 1 AND 256),
+    accepted_at timestamptz NOT NULL CHECK (isfinite(accepted_at)),
+    expires_at timestamptz NOT NULL CHECK (isfinite(expires_at)),
+    marker_until timestamptz NOT NULL CHECK (isfinite(marker_until)),
+    expired boolean NOT NULL DEFAULT false,
+    PRIMARY KEY (project, trace_id, span_id, kind),
+    FOREIGN KEY (project, trace_id, span_id) REFERENCES bindings(project, trace_id, span_id),
+    CHECK (expires_at > accepted_at AND marker_until > expires_at)
+);

@@ -2,7 +2,7 @@
 
 This describes agreed contracts and implementation boundaries. The CLI provides
 help/version only. The internal ingest coordinator runs against controlled test
-backends. Ownership registration has a native-pgx PostgreSQL adapter and immutable
+backends. Ownership registration and known-record lookup have a native-pgx PostgreSQL adapter and immutable
 objects have an AWS SDK v2 R2 adapter. Record publication, a public capture format and replay
 runtime remain unimplemented.
 Its tests model failures rather than establish remote durability.
@@ -69,13 +69,15 @@ from their own first authoritative acceptance. Expired-record markers have a con
 not guaranteed. Confirmed record expiry must also be saved before it is reported,
 so a backward catalog-clock correction cannot revive a retained expired identity.
 The local Lifetime value and controlled catalog tests exercise this state transition,
-including save failure and a saved transition whose reply is lost; native expiry
-transactions remain unimplemented. A false forward jump can expire early, and an
+including save failure and a saved transition whose reply is lost. Native Lookup
+now shares ordinary binding reads and restarts exclusively once to save newly
+observed expiry, rechecking permission and fresh state. SQL tests seed records
+through trusted setup; native record publication remains unimplemented. A false forward jump can expire early, and an
 uncommitted observation gives no protection. Save receipts now carry original catalog-owned AcceptedAt and
 ExpiresAt instants. The coordinator validates their ordering and returns them
 unchanged on retries; controlled tests keep both with the original reference and
-attribution. Native SQL record persistence and a public receipt encoding remain
-unimplemented. Rewind must enforce authenticated producer/execution ownership in
+attribution. SQL Lookup reads saved receipts from trusted setup; native publication and a public
+receipt encoding remain unimplemented. Rewind must enforce authenticated producer/execution ownership in
 the first working version, with writing authority scoped to one agent instance
 in one run in one project, as described in [the capture design](CAPTURE.md#producer-authority).
 Trusted catalog registration is the selected ownership binding. The local Registrar
