@@ -80,7 +80,10 @@ The selected configurable default is ten minutes from trusted normal completion.
 An internal fixed window and controlled catalog tests exercise the delivery boundary.
 A catalog-owned run-admission value and controlled catalog now also close new
 registrations, resolve authorized identical registration retries during drain and
-enforce revocation. Real authenticated run-control operations, persistent state
+enforce revocation. An explicit elapsed-closed value now preserves saved closure
+across supplied clock regression; once durably recorded, closure must not reopen.
+This cannot correct an unobserved clock jump and can retain an early closure caused
+by a false forward jump. Real authenticated run-control operations, persistent state
 and provider clock rules remain unimplemented.
 Payload duration, cleanup, real authentication/grant lifecycles and combined query
 semantics remain to be designed. No expiry or quota mechanism exists yet.

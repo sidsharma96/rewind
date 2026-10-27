@@ -98,10 +98,21 @@ arrives afterward. There is no automatic retry worker in this direction.
 Deadline evaluation must follow lock acquisition. PostgreSQL's
 `current_timestamp`/`now()` report transaction-start time and can be stale after
 waiting. A fresh `clock_timestamp()` query avoids that particular error; it does
-not make wall time monotonic. Authoritative clock regression, durable closure,
-exact admission/commit timing, timestamp encoding and retention configuration
-remain separate unresolved contracts. This design selects none of them. No code
-may assume the locking choice settles deadline or remote durability guarantees.
+not make wall time monotonic. The selected policy remembers elapsed closure:
+after the catalog durably records a closed delivery window, clock corrections,
+completion retries and later grants must not reopen it. A mistaken forward jump
+can permanently close it early; a backward jump before any saved closure can
+still extend apparent eligibility. This does not supply monotonic or failover time.
+
+The internal RunAdmission value now has an explicit elapsed-closed state and a
+CloseElapsed transition; controlled tests save that value and then move supplied
+time backward. There is no persistent catalog or automatic expiry transition yet.
+The SQL adapter must end the ordinary shared-gate transaction without acceptance,
+then acquire the project gate exclusively in a separate policy transaction, verify
+the same original completion/deadline and persist closure. Never upgrade a shared
+lock in place. Closure is established only after that commit is confirmed; earlier
+ordered decisions are not undone. Exact admission/commit timing, timestamp encoding
+and retention configuration remain open. This does not establish remote durability.
 
 ## Cost, alternative and evidence
 
