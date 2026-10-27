@@ -1,5 +1,6 @@
 // Package catalog supplies a PostgreSQL ownership-registration adapter. It does
 // not implement ingest.Catalog, credential verification, run controls or object I/O.
+// The installed schema also stores each project's trusted retention policy.
 package catalog
 
 import (

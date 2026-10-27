@@ -1,5 +1,9 @@
 CREATE TABLE projects (
-    id bytea PRIMARY KEY CHECK (octet_length(id) BETWEEN 1 AND 256)
+    id bytea PRIMARY KEY CHECK (octet_length(id) BETWEEN 1 AND 256),
+    payload_retention_us bigint NOT NULL DEFAULT 604800000000
+        CHECK (payload_retention_us BETWEEN 1 AND 9223372036854775),
+    marker_window_us bigint NOT NULL DEFAULT 86400000000
+        CHECK (marker_window_us BETWEEN 1 AND 9223372036854775)
 );
 CREATE TABLE runs (
     project bytea NOT NULL REFERENCES projects(id),

@@ -13,6 +13,30 @@ The local implementation classifies deadlines and propagates confirmed catalog
 expiry refusals in controlled tests. The current coordinator has no deletion
 operation, authoritative expiry clock or durable lifetime metadata.
 
+## Project policy authority
+
+Each project's trusted retention policy belongs in PostgreSQL. New record
+publication must read that policy while holding the shared project gate, then
+save original acceptance, payload expiry and marker deadline together. A policy
+change takes the project gate exclusively and affects subsequent first
+acceptances only. Retrying a record or accepting its peer keeps the old record's
+stored deadlines. An ingest server's configuration must not override this policy.
+
+The project schema stores `payload_retention_us` and `marker_window_us` in the
+project gate row, with seven-day and 24-hour defaults. Store elapsed durations as
+positive integer microseconds bounded by Go's representable duration; avoid
+calendar months/days and silent conversion overflow. This policy precision is
+independent of captured span timestamps and request/response bytes. The existing
+pure Go deadline value remains independent of this SQL representation.
+
+The fresh-schema installer enforces those bounds and provides defaults; it
+does not migrate or modify an existing schema. Native PostgreSQL tests use trusted
+setup under the existing project-gate convention to verify project isolation,
+persistence through a new pool, rejected invalid settings and policy changes waiting for
+shared holders. No application policy-management API or SQL record publication
+is implied by those schema tests. Record-expiry behavior across a catalog clock
+regression still needs a decision before the acceptance path is implemented.
+
 ## Acceptance, expiry and byte reclamation
 
 An accepted capture whose span has not arrived is required durable data. It is

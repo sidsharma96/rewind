@@ -59,6 +59,24 @@ delete or recreate a project gate or execution binding. Their lifetime and clean
 need a separate design. An unknown project/run fails closed; ordinary record
 delivery cannot provision either or create ownership.
 
+## Project retention policy
+
+The project gate row is also the selected authority for payload retention and
+expired-marker duration. The fresh-schema installer stores positive integer
+microsecond counts with defaults of seven elapsed days and 24 elapsed hours.
+Counts may not exceed `9223372036854775`, the whole-microsecond range that converts
+into a positive Go duration without overflow. This is an encoding bound, not a
+service retention limit or a captured-timestamp format.
+
+Policy writes must take the project gate exclusively. Record publication will
+read policy after its shared gate is acquired and preserve that view until
+commit. The same lock therefore orders permission and policy changes with
+acceptance. A policy update does not rewrite original receipts or markers. A
+lookup or retry must use saved deadlines rather than today's project policy.
+Native PostgreSQL tests validate schema storage and coordination using trusted SQL test
+setup only; record publication and an authenticated policy-control path remain
+unimplemented. There is no schema migration or automatic expiry worker.
+
 ## First registration has no row to lock
 
 `SELECT ... FOR UPDATE` does not lock a nonexistent binding. Registration needs
