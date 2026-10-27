@@ -162,8 +162,9 @@ controlled catalog. Normal completion will close new call registration and permi
 authorized delivery for already registered calls during a finite window; explicit
 revocation closes delivery immediately. The configurable default is ten minutes
 from trusted completion. A fixed window value and controlled catalog exercise
-delivery timing; new-registration closure and real lifecycle operations remain
-unimplemented; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
+delivery timing. Joined run-admission tests now close new registration and allow
+only authorized identical registration retries during the open window. Real
+authenticated lifecycle operations, persistence and provider clocks remain absent; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
 Real grant issuance, revocation propagation, delegation protocols and durable
 representation remain unresolved; no token format or new API is selected.
 
@@ -206,12 +207,17 @@ After validation and bounded admission, the registration authorizer must approve
 this exact execution/owner for a trusted creator and return its authenticated
 principal. Ordinary agent write permission is insufficient. Authorization precedes
 any catalog access; callers cannot supply `RegisteredBy` through Register's arguments.
-The ownership catalog then atomically creates the binding or returns the original.
-An identical owner retry is a duplicate even if another authorized registrar submits
-it; the original creator attribution remains unchanged. A different owner returns
-`ErrOwnershipConflict` without changing the binding.
+The ownership catalog checks current creator permission and run admission atomically
+with the binding outcome. A running run may create a binding; a normally completed
+run permits only an identical existing execution/owner retry before its fixed
+delivery deadline. That retry is a duplicate even if another authorized registrar
+submits it; the original creator attribution remains unchanged. New/changed bindings,
+closed or revoked runs and unknown run state return `ErrDenied` before a duplicate
+or conflict outcome. An owner change returns `ErrOwnershipConflict` only when both
+applicable runs admit the operation. Neither result changes the original binding.
 
-Any other catalog error can hide a committed registration and returns
+`ErrDenied` and `ErrOwnershipConflict` confirm refusal of this attempt. Any other
+catalog error can hide a committed registration and returns
 `ErrRegistrationUncertain` with the cause preserved. Retry the same execution/owner
 to recover the original result. A malformed successful reply also returns uncertain
 plus integrity failure, rather than a successful receipt. Confirmed success remains
@@ -222,9 +228,11 @@ replacement in one process, not real host loss or database durability.
 The operation uses one authorization call and one catalog operation, with no object
 request, payload upload, worker, waiting queue or automatic retry. Its active limit
 is independent of Store's; combined catalog concurrency can reach the sum of their
-limits. Active limits do not bound accumulated bindings. The test catalog uses a
-mutex-protected map with expected constant-time lookup and O(E) entries for E
-executions; no worst-case CPU, row-size, latency or throughput claim follows.
+limits. Active limits do not bound accumulated bindings. The registration-only
+fixture uses a mutex-protected map with expected constant-time lookup and O(E)
+entries for E executions. The combined model also stores runs and grants, with
+costs in [the authorization design](AUTHORIZATION.md). No worst-case CPU, row-size,
+latency or throughput claim follows.
 
 Store now refuses an error from the preliminary owner-aware CheckWrite before
 upload. Publish must repeat owner/grant checks atomically before duplicate/conflict

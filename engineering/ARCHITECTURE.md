@@ -78,7 +78,10 @@ window for already registered calls, with current ownership and grant checks.
 Explicit revocation closes submissions immediately at the catalog boundary.
 The selected configurable default is ten minutes from trusted normal completion.
 An internal fixed window and controlled catalog tests exercise the delivery boundary.
-Closing new registrations and real run lifecycle operations remain unimplemented.
+A catalog-owned run-admission value and controlled catalog now also close new
+registrations, resolve authorized identical registration retries during drain and
+enforce revocation. Real authenticated run-control operations, persistent state
+and provider clock rules remain unimplemented.
 Payload duration, cleanup, real authentication/grant lifecycles and combined query
 semantics remain to be designed. No expiry or quota mechanism exists yet.
 OTLP reception still needs its own bounded decoding, batch handling and

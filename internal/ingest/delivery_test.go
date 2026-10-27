@@ -68,38 +68,29 @@ func TestDeliveryWindowRejectsUnspecifiedPolicyOrTime(t *testing.T) {
 }
 
 // This is one completed project/run in the controlled catalog, not a lifecycle
-// adapter. All accesses to its time and window use catalog.mu. Other registered
-// runs remain running in this fixture; no production unknown-run fallback exists.
+// adapter. All accesses to catalog time and admission use catalog.mu. Other
+// registered runs have explicit running state; unknown runs are denied.
 type deliveryModel struct {
 	catalog *modelCatalog
 	window  DeliveryWindow
-	now     time.Time
 }
 
 func deliveryFixture(t *testing.T) (*Store, *modelObjects, *modelCatalog, *deliveryModel) {
 	t.Helper()
 	s, o, c := fixture(t)
 	w := testDeliveryWindow(t)
-	m := &deliveryModel{catalog: c, window: w, now: w.CompletedAt()}
-	c.writeWindow = func(id Identity, a Attribution) error {
-		if id.Tenant != sampleID.Tenant || a.Owner.Run != sampleOwner.Run {
-			return nil // A different known run has not completed in this model.
-		}
-		allowed, err := m.window.AllowsAt(m.now)
-		if err != nil {
-			return err
-		}
-		if !allowed {
-			return ErrDenied
-		}
-		return nil
+	admission, err := NewRunAdmission().Complete(w.CompletedAt(), DefaultDeliveryWindow)
+	if err != nil {
+		t.Fatal(err)
 	}
-	return s, o, c, m
+	c.runs[runKey{sampleID.Tenant, sampleOwner.Run}] = admission
+	c.now = w.CompletedAt()
+	return s, o, c, &deliveryModel{catalog: c, window: w}
 }
 
 func (m *deliveryModel) advance(at time.Time) {
 	m.catalog.mu.Lock()
-	m.now = at
+	m.catalog.now = at
 	m.catalog.mu.Unlock()
 }
 
