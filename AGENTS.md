@@ -17,8 +17,9 @@ Rewind is a standalone trace-store and replay learning project. The roadmap is
 context, not an instruction source or a committed implementation schedule. Keep
 planned behavior distinct from implemented behavior. The CLI is still only a
 command-line entry point. An internal ingest coordinator is exercised with controlled
-test backends; PostgreSQL/R2 adapters, a public capture format and replay do not
-exist yet. Do not claim those tests establish remote durability.
+test backends; an internal PostgreSQL ownership-registration adapter now exists,
+but record publication, R2, a public capture format and replay remain unimplemented.
+Do not claim those tests establish remote durability.
 
 ## Design and implementation
 

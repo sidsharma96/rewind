@@ -6,9 +6,10 @@ be implemented and measured explicitly.
 
 The CLI currently provides help and version output. An internal ingest coordinator
 exercises immutable writes, ownership and read permissions with controlled test
-backends. Real authentication, PostgreSQL/R2 adapters, trace queries and replay are
-not implemented. The design requires remote durability before acknowledging accepted
-data and distinguishes recorded playback from running an external model again.
+backends. Ownership registration also has an internal PostgreSQL adapter; record
+publication still uses controlled stores. Real authentication, R2, trace queries
+and replay are not implemented. The design requires remote durability before
+acknowledging accepted data and distinguishes recorded playback from running an external model again.
 
 ## Getting started
 

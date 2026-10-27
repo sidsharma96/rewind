@@ -1,9 +1,9 @@
 # PostgreSQL catalog coordination
 
-Status: selected design, not a catalog adapter. Rewind will use native pgx and
-plain SQL. The current module still has no database dependency or persistent
-backend. A disposable PostgreSQL probe exercises the locking mechanics below;
-it does not implement the catalog's full authorization or acceptance rules.
+Status: ownership registration now has an internal native-pgx PostgreSQL adapter.
+Record CheckWrite/Publish/Lookup still use controlled backends; there is no public
+endpoint, real credential verification or R2 adapter. The first native integration
+tests use disposable PostgreSQL, not a remotely deployed production catalog.
 
 ## Different calls may proceed together
 
@@ -106,16 +106,66 @@ still extend apparent eligibility. This does not supply monotonic or failover ti
 
 The internal RunAdmission value now has an explicit elapsed-closed state and a
 CloseElapsed transition; controlled tests save that value and then move supplied
-time backward. There is no persistent catalog or automatic expiry transition yet.
+time backward. The registration adapter persists elapsed closure on an authorized registration
+attempt that observes the original completed deadline. Record-side enforcement
+and an autonomous lifecycle controller remain unimplemented.
 The SQL adapter must end the ordinary shared-gate transaction without acceptance,
 then acquire the project gate exclusively in a separate policy transaction, verify
 the same original completion/deadline and persist closure. Never upgrade a shared
 lock in place. Closure is established only after that commit is confirmed; earlier
-ordered decisions are not undone. Exact admission/commit timing, timestamp encoding
-and retention configuration plumbing remain open. The selected payload default is
+ordered decisions are not undone. Persistent timestamp encoding and record-retention plumbing still need work. Eligibility is decided with a
+fresh database time under the acquired locks; an eligible transaction may finish
+committing after the deadline. Success still requires confirmed commit. The
+deadline does not promise that the final disk flush finishes before a wall-clock
+instant. The selected payload default is
 seven elapsed days from each record's first authoritative acceptance, followed by
 24 hours of expired identity recognition; retries preserve both deadlines. Neither
 duration is an automatic cleanup mechanism. This does not establish remote durability.
+
+## First native operation
+
+The concrete `internal/catalog` package uses native pgxpool and implements
+`ingest.OwnershipCatalog`; record
+CheckWrite/Publish/Lookup remain on controlled backends until a later slice. This
+does not give Store a partially protected PostgreSQL path. There is no public
+endpoint or real credential verification.
+
+The caller owns the pool and supplies a trusted schema name; query table names
+are explicitly qualified. An explicit installer creates that new owned schema
+and its tables in one transaction; no implicit
+creation, destructive migration or reuse of unrelated application tables. The
+first operation needs project gates, runs, exact creator grants and immutable
+bindings only. Persist bounded opaque IDs as bytea, preserving exact bytes and
+avoiding text collation or UTF-8 normalization. Use explicit phase labels and
+validated completion/deadline pairs rather than storing a Go enum's ordinal.
+
+Registration follows the shared-gate/unique-insert/locked-read sequence above.
+Reconstruct admission through the existing domain value's validated transitions,
+not a second set of SQL authorization rules. A deadline refusal that needs saved
+closure first rolls back its tentative binding and releases locks, then takes the
+exclusive project gate in a separate closure transaction. Match the observed
+original deadline before recording closure; preserve existing revocation/closure.
+No caller-supplied timestamp establishes that observation. A failed or ambiguous
+closure commit must not be presented as confirmed saved closure.
+
+Bound active calls before pool acquisition and give the whole operation an explicit
+trusted timeout. Each transaction refuses a replica/read-only server or disabled
+fsync, strengthens weak synchronous_commit settings to on, and preserves the
+operator's stronger remote_apply setting. These are minimum PostgreSQL checks;
+remote placement, storage reliability and failover policy still belong to deployment. Keep rollback cleanup separately bounded after cancellation;
+release or close the connection on every path. Ordinary SQL/connection/commit
+failures remain uncertain to Registrar; do not wrap an ambiguous outcome with a
+confirmed ErrDenied or ErrOwnershipConflict. Confirmed commit remains success
+even if cancellation arrives just afterward. New grants and lifecycle operations
+will still need authenticated controls; synthetic integration fixtures may seed
+policy only under the same project-gate discipline.
+
+Integration tests must opt in to a disposable database and own their fresh test
+schema. Exercise exact bounded IDs, both-run checks, simultaneous first insertion,
+original registrar preservation, current grants after waiting, remembered closure,
+failure/cancellation and pool replacement. Observe lock waits with database blocker
+state, not sleeps. A local PostgreSQL restart is not ingest-machine-loss evidence,
+and no registration-only test establishes R2 durability or trace lookup.
 
 ## Cost, alternative and evidence
 
@@ -131,8 +181,15 @@ in addition to grants, runs and accepted records. Indexed equality lookups have
 tree-search and possible storage I/O costs, not a constant-time map guarantee.
 Registration has a unique insert and a binding read; a record mutation locks an
 existing binding. Counts of actual queries, transferred rows, WAL bytes, waits
-and recovery work must be measured once the schema/adapter exists. The lock
+and recovery work have not yet been measured on a representative workload. The lock
 protocol adds no object requests and must never hold a database lock across R2.
+A successful same-run registration at the default commit setting issues nine
+application SQL commands including BEGIN/COMMIT, the durability check, gate,
+creator grant, insertion, locked binding read, run read and fresh time. A second
+run or a commit-setting upgrade adds a command. Cold pgx preparation, internal
+constraint work and closure transactions add work; this is a source-level count,
+not a measured network-round-trip or latency result.
+
 
 A disposable native-pgx probe on PostgreSQL 16.13 exercised different-call
 concurrency, same-call waiting, an exclusive policy change waiting for both shared
