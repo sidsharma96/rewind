@@ -69,7 +69,7 @@ func (f fixture) seed(t *testing.T, r ingest.Registration) {
 		t.Fatal(err)
 	}
 	defer rollback(tx)
-	if _, err = tx.Exec(ctx, "INSERT INTO "+f.c.table("projects")+" VALUES($1) ON CONFLICT DO NOTHING", []byte(r.Execution.Tenant)); err != nil {
+	if _, err = tx.Exec(ctx, "INSERT INTO "+f.c.table("projects")+"(id) VALUES($1) ON CONFLICT DO NOTHING", []byte(r.Execution.Tenant)); err != nil {
 		t.Fatal(err)
 	}
 	if err = f.c.gate(ctx, tx, r.Execution.Tenant, "UPDATE"); err != nil {
