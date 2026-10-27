@@ -61,7 +61,8 @@ a capture acknowledgment must cover its delivered bytes and recoverable link.
 Either record may arrive first. Accepted capture must not wait for span publication;
 their durable shared identity supplies the association. Matched and unmatched capture
 use the same normal retention policy; matching or identical retries do not reset a
-capture's deadline. Expired-record markers have a configurable default window of
+capture's deadline. Span and capture each use a configurable seven elapsed days
+from their own first authoritative acceptance. Expired-record markers have a configurable default window of
 24 hours after payload expiry; after marker removal, old-identity recognition is
 not guaranteed. Rewind must enforce authenticated producer/execution ownership in
 the first working version, with writing authority scoped to one agent instance
@@ -85,8 +86,8 @@ across supplied clock regression; once durably recorded, closure must not reopen
 This cannot correct an unobserved clock jump and can retain an early closure caused
 by a false forward jump. Real authenticated run-control operations, persistent state
 and provider clock rules remain unimplemented.
-Payload duration, cleanup, real authentication/grant lifecycles and combined query
-semantics remain to be designed. No expiry or quota mechanism exists yet.
+Cleanup, real authentication/grant lifecycles and combined query semantics remain
+to be designed. No expiry or quota mechanism exists yet.
 OTLP reception still needs its own bounded decoding, batch handling and
 protocol responses. Reusing the storage sequence does not implement those contracts.
 The scoped mapping investigation and next unresolved choice are described in

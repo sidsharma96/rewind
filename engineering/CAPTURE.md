@@ -262,14 +262,17 @@ span metadata does not shorten the accepted capture's lifetime; a later match do
 not reset its deadline. An identical retry is the same acceptance, not another
 retention period. Use admission/storage quotas to bound new work rather than silently
 shortening the retention promised for accepted records. These are selected rules,
-not an implemented expiry or quota mechanism; no payload duration has been selected.
+not an implemented expiry or quota mechanism. The selected configurable payload
+default is seven elapsed days from each record's first authoritative acceptance,
+with the existing 24-hour marker window after payload expiry.
 The selected configurable default for an expired-record marker is 24 hours after
 payload expiry. This extra identity memory does not extend payload availability.
 
 The simpler alternative of a shorter unmatched-capture timeout reclaims unused data
 earlier, but makes late span delivery change whether recorded inputs survive. A timer
 by itself does not prove a peer will never arrive. The normal policy still needs a
-defined start, clock authority, payload duration, policy-change and late-arrival semantics.
+authoritative acceptance timing, clock authority, policy-change and late-arrival
+semantics. The payload duration default is seven elapsed days.
 Cleanup must account for concurrent readers/writers, uncertain publication and
 objects shared by other accepted records. See [retention boundaries](RETENTION.md).
 

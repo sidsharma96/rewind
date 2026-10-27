@@ -2,6 +2,11 @@ package ingest
 
 import "time"
 
+// DefaultPayloadRetention is seven elapsed days from a record's first acceptance.
+// Span and capture each have their own acceptance time. Callers supply trusted
+// policy explicitly; this constant does not schedule expiry or delete objects.
+const DefaultPayloadRetention = 7 * 24 * time.Hour
+
 // DefaultMarkerWindow is the selected initial window AFTER payload expiry.
 // It is not a payload retention duration or an automatically running policy.
 const DefaultMarkerWindow = 24 * time.Hour
