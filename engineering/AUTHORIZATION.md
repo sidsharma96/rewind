@@ -170,7 +170,8 @@ save that value; CheckRecord alone remains a pure predicate and changes no state
 Completion/closure retries preserve closure and original timing. Revocation remains
 a distinct state. Controlled tests save closure, regress supplied time, replace
 coordinators and refuse record/registration retries while leaving reads intact.
-There is no automatic persistent closure operation yet. A false forward jump can
+The registration adapter now persists observed elapsed closure in PostgreSQL.
+Record-side SQL and an autonomous lifecycle controller remain unimplemented. A false forward jump can
 close early; a backward jump before saved closure remains outside this protection.
 
 Confirmed `ErrDenied` from registration means refusal of this attempt, like a

@@ -15,6 +15,18 @@ private/generated artifacts and oversized source files. `make race` runs the tes
 with Go's race detector. The optional hook checks the index and whitespace before
 a commit; installation refuses to replace an existing custom hook setting.
 
+PostgreSQL registration integration tests are opt-in. Use an explicitly disposable
+PostgreSQL database whose test role may create schemas, and set
+`REWIND_TEST_POSTGRES` to its connection string before running:
+
+```sh
+go test -race -count=1 ./internal/catalog
+```
+
+The tests create fresh randomly named schemas and remove only those schemas.
+Without the variable, database tests skip; normal checks still require no database.
+Keep connection strings and credentials out of source and check logs.
+
 Follow the [Go practices](engineering/GO.md). Keep changes focused and branch names
 descriptive, such as `batch-recovery`. Explain the problem, resulting behavior and
 relevant checks in a pull request. Include a concrete failure sequence when fixing

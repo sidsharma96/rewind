@@ -164,7 +164,9 @@ revocation closes delivery immediately. The configurable default is ten minutes
 from trusted completion. A fixed window value and controlled catalog exercise
 delivery timing. Joined run-admission tests now close new registration and allow
 only authorized identical registration retries during the open window. Real
-authenticated lifecycle operations, persistence and provider clocks remain absent; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
+authenticated lifecycle operations and general provider-clock guarantees remain
+absent. The registration adapter now persists bindings and elapsed closure; record
+publication still uses controlled backends; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
 Real grant issuance, revocation propagation, delegation protocols and durable
 representation remain unresolved; no token format or new API is selected.
 
@@ -199,7 +201,7 @@ provides a connection-authentication boundary, not Rewind execution ownership.
 `Registrar.Register` in `internal/ingest/registration.go` establishes one immutable
 binding through controlled capabilities. `Execution` contains tenant/trace/span;
 `Owner` contains run/instance. Leaving kind out of the binding gives span and capture
-one owner. These are bounded opaque internal IDs, not a persisted schema or selected
+one owner. These are bounded opaque internal IDs, not a selected public
 wire encoding. `Tenant` supplies the project's scope for this experiment, not a new
 organization/project hierarchy.
 
@@ -243,6 +245,12 @@ lost replies and a grant change during upload; [the enforcement design](AUTHORIZ
 states the contracts and costs. Legacy rows without attribution fail closed rather
 than acquiring history from a later binding. Real credential/grant lifetimes,
 admission quotas, binding retention and provider enforcement remain unresolved.
+The native registration adapter now persists bindings and checks creator grants
+and both run states in PostgreSQL; see [the SQL scope](POSTGRES.md#first-native-operation).
+It has no record table or Store publication implementation, so it must not be
+combined with an unrelated binding store and treated as enforced record ownership.
+Its installer requires a new owned schema; it migrates no legacy dataset.
+
 
 For OTLP, keep the standard span format and authenticated exporter transport. The
 agreed integration direction is a small helper in the trusted host application
