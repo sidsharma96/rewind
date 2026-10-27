@@ -55,12 +55,13 @@ collectors acting for producers need explicit scoped authority. Telemetry labels
 and first arrival do not prove ownership. Writing authority is scoped to one agent
 instance in one run in one project; stable agent names do not grant cross-instance
 or cross-run authority. The chosen binding is trusted catalog registration before
-record acceptance. Its internal Registrar is tested with controlled capabilities;
-the tenant-only Store does not enforce those registrations yet. Do not expose it
-or treat existing records as retroactively authorized; see `engineering/CAPTURE.md`.
+record acceptance. Its internal Registrar and Store use controlled capabilities.
+Store requires owner-aware catalog checks and explicit project-reader permissions; no
+real credential verification or remote adapter exists. Do not expose it or treat
+legacy unattributed records as retroactively authorized; see `engineering/CAPTURE.md`.
 Read access requires an explicit project-reader permission, covering span and
 capture across the project. Owning/writing an execution grants no automatic read
-access. This read policy is selected but is not implemented by the current Store.
+access. Controlled tests exercise this policy; real credential verification is absent.
 
 The Concordance coordination direction is a small in-process Go object-storage
 library. Establish its contract with a write/read/recovery sequence from each

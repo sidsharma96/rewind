@@ -78,10 +78,9 @@ identity conflict without changing either previously accepted record.
 
 The local coordinator includes a span/capture kind in the internal tenant/trace/span
 key. It is a bounded storage primitive, not an attachment API: it
-does not parse bodies, join records, validate producer ownership or check parent
-existence. Both kinds use the same tenant authorization, admission and immutable
-object-before-catalog sequence. The kind is part of catalog identity, not the object
-digest or the execution identity. Unsupported kinds must fail before storage access.
+does not parse bodies, join records or check parent existence. Both kinds use the
+same execution-owner checks, admission and immutable object-before-catalog sequence.
+The kind is part of catalog identity, not the object digest or the execution identity. Unsupported kinds must fail before storage access.
 This key is not a selected wire format, persisted schema or OpenTelemetry type.
 
 The simplest alternative was one immutable snapshot containing metadata and available
@@ -114,8 +113,8 @@ would force the producer to buffer or retry capture merely because delivery was
 reordered. The chosen contract adds partial states that need storage limits,
 retention and clear query results. It does not authorize an arbitrary producer to
 attach data to another producer's execution. The selected ownership requirement
-below is not implemented; the local tenant-only seam must not be exposed as a public
-attachment API.
+below is exercised through controlled authorizer/catalog capabilities. This internal
+seam must not be exposed as a public attachment API.
 
 ## Producer authority
 
@@ -128,8 +127,8 @@ An execution owner or producer writer gains no automatic read access. This lets 
 authorized debugger follow several agents' records while keeping writing authority
 restricted to the correct instance. Narrower per-run/instance read grants would
 reduce reader exposure but add grant management and potentially partial views;
-they are deferred. Neither the selected read policy nor producer authorization is
-implemented by the current tenant-only Store.
+they are deferred. Store now requires these separate capabilities; tests exercise
+them with controlled identity and grant state, not real authentication.
 
 For example, A owns an execution and B belongs to the same project. B guesses its
 trace/span identity and sends capture before A sends the span. Rewind must refuse
@@ -158,7 +157,8 @@ Trusted authentication and permissions must establish that project/run/instance
 scope. Even a valid instance scope does not prove ownership of every trace/span
 it names. A trusted execution creator must register that exact binding in the
 authoritative catalog before record acceptance. The local registration coordinator
-exists, but record acceptance does not enforce it yet. Grant issuance, revocation, delegation,
+and owner-aware record publication share a binding contract, exercised with one
+controlled catalog. Real grant issuance, revocation propagation, delegation protocols,
 durable representation and queued delivery after a run ends remain unresolved;
 no token format or new API is selected.
 
@@ -167,8 +167,9 @@ before returning duplicate/conflict outcomes. A preliminary lookup is not owners
 proof. Lookup and read paths must enforce their permissions before disclosing record
 state. Identical contents do not authorize another writer, and no owner may rewrite
 an accepted original. Retain trustworthy owner/submitter attribution with acceptance
-so replacing the ingest host does not erase it. The current record catalog does not
-do this. Registration's catalog contract separately requires original creator attribution.
+so replacing the ingest host does not erase it. The record catalog now requires
+original owner/submitter attribution and returns it unchanged for authorized retries.
+Registration's catalog contract separately requires original creator attribution.
 
 The simpler alternative was one trusted writer for an entire project. It requires
 less identity and grant state, but leaves producer isolation to that writer. The
@@ -220,14 +221,15 @@ limits. Active limits do not bound accumulated bindings. The test catalog uses a
 mutex-protected map with expected constant-time lookup and O(E) entries for E
 executions; no worst-case CPU, row-size, latency or throughput claim follows.
 
-The selected future integration must refuse unregistered record writes and enforce
-owner/grant checks inside atomic publication, before duplicate/conflict outcomes.
-A separate lookup followed by the old Publish operation is insufficient. Current
-Store still accepts tenant-authorized test records without registration. They must
-not become retroactively authenticated by registering an owner afterward. Registration
-therefore does not make the existing ingest primitive a safe public API. Enforcement
-of the selected project-reader policy, credential/grant lifetimes, admission quotas
-and binding retention remain unresolved.
+Store now refuses an error from the preliminary owner-aware CheckWrite before
+upload. Publish must repeat owner/grant checks atomically before duplicate/conflict
+outcomes and preserve the original submitter on a retry by another authorized
+collector. Lookup separately requires an explicit project-reader grant. Controlled
+tests exercise registration plus both record kinds, denial, concurrent retries,
+lost replies and a grant change during upload; [the enforcement design](AUTHORIZATION.md)
+states the contracts and costs. Legacy rows without attribution fail closed rather
+than acquiring history from a later binding. Real credential/grant lifetimes,
+admission quotas, binding retention and provider enforcement remain unresolved.
 
 For OTLP, keep the standard span format and authenticated exporter transport. The
 agreed integration direction is a small helper in the trusted host application

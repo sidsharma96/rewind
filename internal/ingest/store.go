@@ -21,6 +21,7 @@ var (
 	ErrNotFound      = errors.New("record not found in catalog")
 	ErrObjectMissing = errors.New("accepted record object missing")
 	ErrIntegrity     = errors.New("accepted record reference or contents failed integrity check")
+	ErrDenied        = errors.New("record operation not authorized")
 )
 
 const maxIdentityBytes = 256
@@ -61,15 +62,27 @@ type Reference struct {
 }
 
 type Receipt struct {
-	Reference Reference
-	Duplicate bool
+	Reference   Reference
+	Attribution Attribution
+	Duplicate   bool
 }
 
-// Authorizer must bind the requested tenant to trusted request identity.
-// The coordinator calls it before accessing either storage capability.
-// Implementations must honor cancellation and be safe for concurrent calls.
+// Attribution separates the execution owner from the authenticated submitter.
+// It comes from trusted authorization, never Write's caller or telemetry labels.
+// The catalog retains the original value separately for each accepted record.
+type Attribution struct {
+	Owner       Owner
+	SubmittedBy string
+}
+
+// Authorizer checks exact execution write authority or explicit project-reader
+// permission before storage access. Returned identities must come from trusted
+// request context and grants. A collector needs explicit authority for the owner.
+// The catalog must also check current grants at each operation's atomic boundary.
+// Implementations honor cancellation and are safe for concurrent calls.
 type Authorizer interface {
-	Authorize(context.Context, string) error
+	AuthorizeWrite(context.Context, Execution) (Attribution, error)
+	AuthorizeRead(context.Context, string) (principal string, err error)
 }
 
 // Objects provides immutable content storage. Create succeeds only after complete
@@ -84,20 +97,24 @@ type Objects interface {
 	Read(ctx context.Context, id ObjectID, maxBytes int) ([]byte, error)
 }
 
-// Catalog atomically publishes one record with its lookup reference. Kind is part
-// of identity: accepting capture must not replace or conflict with span metadata.
-// Either kind may be accepted first; publication must not require the peer record.
-// This primitive does not authorize capture ownership.
-// Publish returns duplicate=true only for an identical accepted reference. ErrConflict
-// and ErrExpired mean this publication was refused without modifying the original.
-// A retained expired identity refuses both identical and changed contents. Lookup
-// returns ErrExpired while retaining that identity, not ErrNotFound. Every other
-// Publish error may hide a committed transaction. Lookup reads authoritative committed
-// state; only absence returns ErrNotFound. Implementations honor cancellation and
-// are safe for concurrent calls. They must not include captured bytes in errors.
+// Catalog enforces current grants and the immutable binding established through
+// OwnershipCatalog in the same authoritative state. CheckWrite checks the writer
+// and registered owner, then expiry, allowing both absent and live records. It
+// reserves nothing. Publish repeats those checks atomically with acceptance,
+// before returning duplicate/conflict/expiry outcomes. Both kinds share one owner
+// but neither requires the peer record. Reference and original Attribution must
+// be committed together. Identical retries return the original attribution even
+// when a different authorized submitter retries; legacy unattributed rows fail closed.
+// Lookup checks the explicit project-reader grant before exposing any record state.
+// It returns original attribution with Duplicate=false; only absence is ErrNotFound.
+// ErrDenied, ErrConflict and ErrExpired confirm refusal of this Publish attempt;
+// all other Publish errors may hide a commit. No error proves earlier absence.
+// Implementations honor cancellation, are safe for concurrent calls, and must not
+// include captured bytes or credentials in errors. See engineering/AUTHORIZATION.md.
 type Catalog interface {
-	Publish(context.Context, Reference) (duplicate bool, err error)
-	Lookup(context.Context, Identity) (Reference, error)
+	CheckWrite(context.Context, Identity, Attribution) error
+	Publish(context.Context, Reference, Attribution) (Receipt, error)
+	Lookup(context.Context, Identity, string) (Receipt, error)
 }
 
 // Limits is trusted application configuration, not a negotiated service SLA.
@@ -141,13 +158,23 @@ func (s *Store) Write(ctx context.Context, id Identity, contents []byte) (Receip
 	}
 	defer s.end()
 
-	if _, err := s.catalog.Lookup(ctx, id); err != nil && !errors.Is(err, ErrNotFound) {
+	writer, err := s.authorizer.AuthorizeWrite(ctx, executionOf(id))
+	if err != nil {
+		return Receipt{}, fmt.Errorf("authorize record writer: %w", err)
+	}
+	if !validAttribution(writer) {
+		return Receipt{}, ErrInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return Receipt{}, err
+	}
+	if err := s.catalog.CheckWrite(ctx, id, writer); err != nil {
 		return Receipt{}, fmt.Errorf("check record before upload: %w", err)
 	}
 	if err := ctx.Err(); err != nil {
 		return Receipt{}, err
 	}
-	// The lookup reserves nothing: publication must recheck expiry and conflicts.
+	// The check reserves nothing: publication rechecks authority, expiry and conflicts.
 	owned := bytes.Clone(contents)
 	ref := Reference{Identity: id, Digest: sha256.Sum256(owned), Size: len(owned)}
 	object := ObjectID{Tenant: id.Tenant, Digest: ref.Digest}
@@ -157,15 +184,18 @@ func (s *Store) Write(ctx context.Context, id Identity, contents []byte) (Receip
 	if err := ctx.Err(); err != nil {
 		return Receipt{}, err
 	}
-	duplicate, err := s.catalog.Publish(ctx, ref)
+	receipt, err := s.catalog.Publish(ctx, ref, writer)
 	if err != nil {
-		if errors.Is(err, ErrConflict) || errors.Is(err, ErrExpired) {
+		if errors.Is(err, ErrConflict) || errors.Is(err, ErrExpired) || errors.Is(err, ErrDenied) {
 			return Receipt{}, fmt.Errorf("publish record: %w", err)
 		}
 		return Receipt{}, fmt.Errorf("publish record: %w", errors.Join(ErrUncertain, err))
 	}
+	if receipt.Reference != ref || !validAttribution(receipt.Attribution) || receipt.Attribution.Owner != writer.Owner || (!receipt.Duplicate && receipt.Attribution != writer) {
+		return Receipt{}, fmt.Errorf("publish record: %w", errors.Join(ErrUncertain, ErrIntegrity))
+	}
 	// Once publication is confirmed, later cancellation cannot undo acceptance.
-	return Receipt{Reference: ref, Duplicate: duplicate}, nil
+	return receipt, nil
 }
 
 // Read resolves one known record. It does not enumerate a trace, join span and
@@ -177,11 +207,22 @@ func (s *Store) Read(ctx context.Context, id Identity) ([]byte, error) {
 	}
 	defer s.end()
 
-	ref, err := s.catalog.Lookup(ctx, id)
+	reader, err := s.authorizer.AuthorizeRead(ctx, id.Tenant)
+	if err != nil {
+		return nil, fmt.Errorf("authorize project reader: %w", err)
+	}
+	if !validRegistrationID(reader) {
+		return nil, ErrInvalid
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	receipt, err := s.catalog.Lookup(ctx, id, reader)
 	if err != nil {
 		return nil, fmt.Errorf("lookup record: %w", err)
 	}
-	if ref.Identity != id || ref.Size < 0 {
+	ref := receipt.Reference
+	if ref.Identity != id || ref.Size < 0 || !validAttribution(receipt.Attribution) || receipt.Duplicate {
 		return nil, ErrIntegrity
 	}
 	if ref.Size > s.limits.MaxRecordBytes {
@@ -214,11 +255,15 @@ func (s *Store) begin(ctx context.Context, id Identity) error {
 	default:
 		return ErrBusy
 	}
-	if err := s.authorizer.Authorize(ctx, id.Tenant); err != nil {
-		s.end()
-		return fmt.Errorf("authorize tenant: %w", err)
-	}
 	return nil
 }
 
 func (s *Store) end() { <-s.active }
+
+func executionOf(id Identity) Execution {
+	return Execution{Tenant: id.Tenant, Trace: id.Trace, Span: id.Span}
+}
+
+func validAttribution(a Attribution) bool {
+	return validRegistrationID(a.Owner.Run) && validRegistrationID(a.Owner.Instance) && validRegistrationID(a.SubmittedBy)
+}

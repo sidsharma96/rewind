@@ -4,10 +4,11 @@ Rewind is a Go project for recording, storing and replaying AI calls. Its storag
 engine is a learning project: data formats, indexes, recovery and their costs will
 be implemented and measured explicitly.
 
-The repository currently contains the initial scaffold. Ingest, storage, queries
-and replay are not implemented yet. The design requires remote durability before
-acknowledging accepted data and distinguishes recorded playback from running an
-external model again.
+The CLI currently provides help and version output. An internal ingest coordinator
+exercises immutable writes, ownership and read permissions with controlled test
+backends. Real authentication, PostgreSQL/R2 adapters, trace queries and replay are
+not implemented. The design requires remote durability before acknowledging accepted
+data and distinguishes recorded playback from running an external model again.
 
 ## Getting started
 

@@ -15,7 +15,14 @@ var sampleID = Identity{Tenant: "tenant-a", Trace: "trace-1", Span: "span-42"}
 
 type authorizeFunc func(context.Context, string) error
 
-func (f authorizeFunc) Authorize(ctx context.Context, tenant string) error { return f(ctx, tenant) }
+// These adapters keep the older storage-failure tests focused on their original
+// boundaries. The fixture separately provisions binding and grant state.
+func (f authorizeFunc) AuthorizeWrite(ctx context.Context, e Execution) (Attribution, error) {
+	return Attribution{Owner: sampleOwner, SubmittedBy: "principal-a"}, f(ctx, e.Tenant)
+}
+func (f authorizeFunc) AuthorizeRead(ctx context.Context, tenant string) (string, error) {
+	return "reader-a", f(ctx, tenant)
+}
 
 // These backends are a controlled model, not durable storage. Their state belongs
 // to the fixture so replacing Store discards all coordinator-local state only.
@@ -88,72 +95,223 @@ func (m *modelObjects) count() int {
 	return len(m.data)
 }
 
+type writerGrant struct {
+	Tenant      string
+	Attribution Attribution
+}
+
+type readerGrant struct{ Tenant, Principal string }
+
 type modelCatalog struct {
 	mu            sync.Mutex
 	rows          map[Identity]Reference
+	attribution   map[Identity]Attribution
+	bindings      map[Execution]Registration
+	writers       map[writerGrant]bool
+	readers       map[readerGrant]bool
 	publications  atomic.Int64
 	lookups       atomic.Int64
 	beforePublish func(context.Context) error
 	afterPublish  func(context.Context) error
 	lookupErr     error
 	changeLookup  func(Reference) Reference
+	changeReceipt func(Receipt) Receipt
 	afterLookup   func()
+	expiry        func(Identity) error // sequential clock fixture only; called under mu
+	policyErr     error
 }
 
-func (m *modelCatalog) Publish(ctx context.Context, ref Reference) (bool, error) {
+func (m *modelCatalog) writerAllowed(id Identity, a Attribution) error {
+	if m.policyErr != nil {
+		return m.policyErr
+	}
+	reg, exists := m.bindings[executionOf(id)]
+	if !exists || reg.Owner != a.Owner || !m.writers[writerGrant{id.Tenant, a}] {
+		return ErrDenied
+	}
+	return nil
+}
+
+func (m *modelCatalog) recordValid(id Identity) error {
+	if _, exists := m.rows[id]; !exists {
+		return nil
+	}
+	a := m.attribution[id]
+	reg, exists := m.bindings[executionOf(id)]
+	if !validAttribution(a) || !exists || reg.Owner != a.Owner {
+		return ErrIntegrity
+	}
+	return nil
+}
+
+func (m *modelCatalog) checkExpiry(id Identity) error {
+	if m.expiry != nil {
+		return m.expiry(id)
+	}
+	return nil
+}
+
+func (m *modelCatalog) CheckWrite(ctx context.Context, id Identity, a Attribution) error {
+	m.lookups.Add(1)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	err := m.writerAllowed(id, a)
+	if err == nil {
+		err = m.lookupErr
+	}
+	if err == nil {
+		err = m.recordValid(id)
+	}
+	if err == nil {
+		err = m.checkExpiry(id)
+	}
+	m.mu.Unlock()
+	if m.afterLookup != nil {
+		m.afterLookup()
+	}
+	return err
+}
+
+func (m *modelCatalog) Publish(ctx context.Context, ref Reference, a Attribution) (Receipt, error) {
 	m.publications.Add(1)
 	if m.beforePublish != nil {
 		if err := m.beforePublish(ctx); err != nil {
-			return false, err
+			return Receipt{}, err
 		}
 	}
 	m.mu.Lock()
 	if err := ctx.Err(); err != nil {
 		m.mu.Unlock()
-		return false, err
+		return Receipt{}, err
+	}
+	if err := m.writerAllowed(ref.Identity, a); err != nil {
+		m.mu.Unlock()
+		return Receipt{}, err
+	}
+	if err := m.recordValid(ref.Identity); err != nil {
+		m.mu.Unlock()
+		return Receipt{}, err
+	}
+	if err := m.checkExpiry(ref.Identity); err != nil {
+		m.mu.Unlock()
+		return Receipt{}, err
 	}
 	old, duplicate := m.rows[ref.Identity]
 	if duplicate && old != ref {
 		m.mu.Unlock()
-		return false, ErrConflict
+		return Receipt{}, ErrConflict
 	}
-	m.rows[ref.Identity] = ref
+	if !duplicate {
+		m.rows[ref.Identity] = ref
+		m.attribution[ref.Identity] = a
+	}
+	receipt := Receipt{Reference: ref, Attribution: m.attribution[ref.Identity], Duplicate: duplicate}
 	m.mu.Unlock()
 	if m.afterPublish != nil {
 		if err := m.afterPublish(ctx); err != nil {
-			return false, err
+			return Receipt{}, err
 		}
 	}
-	return duplicate, nil
+	if m.changeReceipt != nil {
+		receipt = m.changeReceipt(receipt)
+	}
+	return receipt, nil
 }
 
-func (m *modelCatalog) Lookup(ctx context.Context, id Identity) (Reference, error) {
+func (m *modelCatalog) Lookup(ctx context.Context, id Identity, principal string) (Receipt, error) {
 	m.lookups.Add(1)
 	if err := ctx.Err(); err != nil {
-		return Reference{}, err
-	}
-	if m.lookupErr != nil {
-		return Reference{}, m.lookupErr
+		return Receipt{}, err
 	}
 	m.mu.Lock()
+	if m.policyErr != nil {
+		err := m.policyErr
+		m.mu.Unlock()
+		return Receipt{}, err
+	}
+	if !m.readers[readerGrant{id.Tenant, principal}] {
+		m.mu.Unlock()
+		return Receipt{}, ErrDenied
+	}
+	if m.lookupErr != nil {
+		err := m.lookupErr
+		m.mu.Unlock()
+		return Receipt{}, err
+	}
+	if err := m.recordValid(id); err != nil {
+		m.mu.Unlock()
+		return Receipt{}, err
+	}
+	if err := m.checkExpiry(id); err != nil {
+		m.mu.Unlock()
+		return Receipt{}, err
+	}
 	ref, exists := m.rows[id]
+	receipt := Receipt{Reference: ref, Attribution: m.attribution[id]}
 	m.mu.Unlock()
 	if m.afterLookup != nil {
 		m.afterLookup()
 	}
 	if !exists {
-		return Reference{}, ErrNotFound
+		return Receipt{}, ErrNotFound
 	}
 	if m.changeLookup != nil {
-		ref = m.changeLookup(ref)
+		receipt.Reference = m.changeLookup(receipt.Reference)
 	}
-	return ref, nil
+	if m.changeReceipt != nil {
+		receipt = m.changeReceipt(receipt)
+	}
+	return receipt, nil
+}
+
+// Registration uses the same mutex and binding state as publication. The
+// independent Registrar tests also have a smaller registration-only fixture.
+func (m *modelCatalog) RegisterOwnership(ctx context.Context, proposed Registration) (Registration, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Registration{}, false, err
+	}
+	old, exists := m.bindings[proposed.Execution]
+	if exists {
+		if old.Owner != proposed.Owner {
+			return Registration{}, false, ErrOwnershipConflict
+		}
+		return old, true, nil
+	}
+	for _, kind := range []Kind{SpanRecord, CaptureRecord} {
+		id := Identity{Tenant: proposed.Execution.Tenant, Trace: proposed.Execution.Trace, Span: proposed.Execution.Span, Kind: kind}
+		if _, exists := m.rows[id]; exists {
+			return Registration{}, false, ErrIntegrity
+		}
+	}
+	m.bindings[proposed.Execution] = proposed
+	return proposed, false, nil
 }
 
 func (m *modelCatalog) count() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return len(m.rows)
+}
+
+func newModelCatalog() *modelCatalog {
+	return &modelCatalog{rows: make(map[Identity]Reference), attribution: make(map[Identity]Attribution),
+		bindings: make(map[Execution]Registration), writers: make(map[writerGrant]bool), readers: make(map[readerGrant]bool)}
+}
+
+func provision(t *testing.T, c *modelCatalog, id Identity, a Attribution) {
+	t.Helper()
+	registrar := newRegistrar(t, trustedRegistrar("trusted-host-1"), c, 1)
+	if _, err := registrar.Register(t.Context(), executionOf(id), a.Owner); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	c.writers[writerGrant{id.Tenant, a}] = true
+	c.readers[readerGrant{id.Tenant, "reader-a"}] = true
+	c.mu.Unlock()
 }
 
 func allow(ctx context.Context, _ string) error { return ctx.Err() }
@@ -170,7 +328,8 @@ func newStore(t *testing.T, objects *modelObjects, catalog *modelCatalog, auth A
 func fixture(t *testing.T) (*Store, *modelObjects, *modelCatalog) {
 	t.Helper()
 	o := &modelObjects{data: make(map[ObjectID][]byte)}
-	c := &modelCatalog{rows: make(map[Identity]Reference)}
+	c := newModelCatalog()
+	provision(t, c, sampleID, Attribution{sampleOwner, "principal-a"})
 	return newStore(t, o, c, authorizeFunc(allow), Limits{1024, 32}), o, c
 }
 
@@ -249,6 +408,7 @@ func TestNewExecutionAndTenantHaveSeparateIdentities(t *testing.T) {
 		{Tenant: sampleID.Tenant, Trace: sampleID.Trace, Span: "span-43"},
 		{Tenant: "tenant-b", Trace: sampleID.Trace, Span: sampleID.Span},
 	} {
+		provision(t, c, id, Attribution{sampleOwner, "principal-a"})
 		r, err := s.Write(t.Context(), id, []byte("identical contents"))
 		if err != nil || r.Duplicate {
 			t.Fatalf("new identity = %+v, %v", r, err)
