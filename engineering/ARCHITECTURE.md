@@ -76,7 +76,9 @@ and refusal after a grant changes during upload; see [ownership enforcement](AUT
 Normal completion will stop new call registration and allow a bounded delivery
 window for already registered calls, with current ownership and grant checks.
 Explicit revocation closes submissions immediately at the catalog boundary.
-The duration and lifecycle implementation are still open; this is selected policy.
+The selected configurable default is ten minutes from trusted normal completion.
+An internal fixed window and controlled catalog tests exercise the delivery boundary.
+Closing new registrations and real run lifecycle operations remain unimplemented.
 Payload duration, cleanup, real authentication/grant lifecycles and combined query
 semantics remain to be designed. No expiry or quota mechanism exists yet.
 OTLP reception still needs its own bounded decoding, batch handling and
