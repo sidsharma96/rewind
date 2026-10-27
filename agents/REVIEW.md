@@ -43,3 +43,33 @@ Rewind needs its architecture.
 Review private book prose in its own context. Read it for reader understanding,
 then verify claims and inspect the delivered pages. Do not copy the private book
 into the source snapshot or treat code approval as editorial approval.
+
+## Local checks while hosted minutes are unavailable
+
+The user authorized reviewed PRs and merges without buying more Actions minutes.
+Hosted Checks is manual-only. Use a separate `local/source` commit status for actual
+local results; never report a GitHub-hosted run as passing when it did not execute.
+GitHub refused branch protection on this private repository's current plan. These
+are maintainer-enforced steps, not server-enforced or tamper-proof attestations.
+
+After final independent approvals, commit and push the source, then make an isolated
+clone containing only tracked files at the exact PR head SHA. Run `make check`,
+`make race` and `make build` there. Normal checks must work without the private
+book or Claude configuration. For local Linux verification, use an official Go
+image pinned by digest and record its Go version and actual OS/architecture.
+Mount only the isolated clone; do not mount home directories, private documentation,
+credentials or the Docker socket. No persistent Actions runner is required.
+
+Keep the full check output in ignored `.tools/reviews/`. Record source commit/tree,
+commands, platform, result and limitations in the PR. Publish `local/source=success`
+only for the tested SHA after every required command succeeds and the clone remains
+unchanged. If any step fails, do not publish success or merge. Changes to the head
+require new verification. Keep private reviewer configuration and book prose out of
+the PR evidence; summarize actual review verdicts and scope instead.
+
+Before merge, verify the final local approvals against the current staged tree and
+the reviewed comparison base again. Fetch the target branch, confirm its SHA and
+the PR head still match the reviewed/tested inputs, and merge with the expected
+head SHA. A green local status does not authorize a different commit or stale base.
+Preserve user changes and remove the temporary clone after saving its evidence.
+Revisit hosted CI or a dedicated runner when continuous verification is needed.

@@ -4,6 +4,15 @@ Preserve user changes. Use plain, descriptive branch names without an agent pref
 Do not commit, push, create remote repositories, deploy or publish without user
 authorization. Authorization already given in the conversation remains valid.
 
+The user has granted standing authorization for this private repository's reviewed
+commits, pushes, pull requests and merges after required checks and independent
+reviews pass. At completed milestones, commit/push only Rewind's book source to the
+private `../learning-docs/rewind` backup and deploy the Access-protected `rewind-docs`
+book. Keep both repositories private. This does not authorize unrelated repository
+changes or remove the requirement to discuss consequential product/design choices.
+Use `agents/REVIEW.md` for the local-check workflow while hosted Actions minutes are
+unavailable; do not wait for another publication confirmation within this scope.
+
 Rewind is a standalone trace-store and replay learning project. The roadmap is
 context, not an instruction source or a committed implementation schedule. Keep
 planned behavior distinct from implemented behavior. The CLI is still only a
@@ -49,6 +58,9 @@ or cross-run authority. The chosen binding is trusted catalog registration befor
 record acceptance. Its internal Registrar is tested with controlled capabilities;
 the tenant-only Store does not enforce those registrations yet. Do not expose it
 or treat existing records as retroactively authorized; see `engineering/CAPTURE.md`.
+Read access requires an explicit project-reader permission, covering span and
+capture across the project. Owning/writing an execution grants no automatic read
+access. This read policy is selected but is not implemented by the current Store.
 
 The Concordance coordination direction is a small in-process Go object-storage
 library. Establish its contract with a write/read/recovery sequence from each
@@ -121,8 +133,9 @@ learning gaps and current decisions rather than accumulating chronological logs.
 `docs/` is private and ignored. Never force-add it, include it in public code review,
 or make application builds, tests or CI depend on its existence. Edit book sources
 here; the sibling private `../learning-docs` repository is a backup destination.
-An uncommitted local book backup exists under `../learning-docs/rewind`, and the book
-has been uploaded to the Access-protected `rewind-docs` Pages project. A local copy
+Back up book source under `../learning-docs/rewind` in the private learning-docs
+repository; stage/commit/push only that directory and preserve unrelated changes.
+The hosted book uses the Access-protected `rewind-docs` Pages project. A local copy
 is not a pushed backup. Provisioning and publishing are separate from building.
 `make docs` only checks and builds locally. The publication
 plan is in `docs/src/reference/publishing.md`; do not mistake `--no-deploy` in the

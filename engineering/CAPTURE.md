@@ -122,9 +122,14 @@ attachment API.
 The first working version must enforce producer/execution ownership inside Rewind.
 Project membership alone must not permit a writer to claim another producer's
 execution. Project permissions govern allowed operations; attribution identifies
-whose execution a record describes. Reading a shared trace and writing another
-producer's records are separate permissions; the concrete permission matrix is
-not selected yet.
+whose execution a record describes. The selected read policy requires an explicit
+project-reader permission covering span metadata and capture across that project.
+An execution owner or producer writer gains no automatic read access. This lets an
+authorized debugger follow several agents' records while keeping writing authority
+restricted to the correct instance. Narrower per-run/instance read grants would
+reduce reader exposure but add grant management and potentially partial views;
+they are deferred. Neither the selected read policy nor producer authorization is
+implemented by the current tenant-only Store.
 
 For example, A owns an execution and B belongs to the same project. B guesses its
 trace/span identity and sends capture before A sends the span. Rewind must refuse
@@ -220,8 +225,9 @@ owner/grant checks inside atomic publication, before duplicate/conflict outcomes
 A separate lookup followed by the old Publish operation is insufficient. Current
 Store still accepts tenant-authorized test records without registration. They must
 not become retroactively authenticated by registering an owner afterward. Registration
-therefore does not make the existing ingest primitive a safe public API. Read scope,
-credential/grant lifetimes, admission quotas and binding retention remain unresolved.
+therefore does not make the existing ingest primitive a safe public API. Enforcement
+of the selected project-reader policy, credential/grant lifetimes, admission quotas
+and binding retention remain unresolved.
 
 For OTLP, keep the standard span format and authenticated exporter transport. The
 agreed integration direction is a small helper in the trusted host application
