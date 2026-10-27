@@ -21,14 +21,11 @@ create a conflict; formatting differences within captured bytes still matter.
 The field schema, identity validation and deterministic record encoding need a
 separate checkpoint. The coordinator does not parse or normalize transport JSON.
 
-An authorization capability checks the requested tenant before either store is
-accessed. It will eventually bind the request to authenticated identity; the test
-fixture supplies a controlled authorizer. No network authentication is implemented.
-The coordinator must not infer authorization from a tenant or trace ID in a record.
-The first working version must also enforce [producer/execution ownership](CAPTURE.md#producer-authority).
-This tenant-only experiment does not satisfy that selected requirement.
-The separate Registrar now exercises trusted ownership registration. Store does
-not consult it, so its existence does not authorize these experimental record writes.
+Separate authorization methods approve a writer for the exact execution or an
+explicit project reader before storage access. Tests supply controlled principals;
+no network authentication is implemented. The catalog checks current grants and the
+[registered execution owner](AUTHORIZATION.md) at its authoritative operation boundary.
+Store never infers authority from a tenant, trace ID or telemetry label.
 
 The operation follows this order:
 
@@ -36,24 +33,23 @@ The operation follows this order:
 Authorize and admit bounded work
               |
               v
-Look up identity (stop on expiry or lookup failure; absence may proceed)
+Check current writer grant, registered owner and expiry
               |
               v
 Create immutable object (tenant + content digest)
               |
               v
-Atomically publish identity, digest, size and lookup reference
+Atomically check authority and publish reference + original attribution
               |
               v
 Return success
 ```
 
-The preliminary lookup avoids uploads for identities already known to be expired
-and stops writes when the catalog cannot be consulted. Only a confirmed absence
-(`ErrNotFound`) permits proceeding through a lookup error. A successful lookup also
-proceeds: it does not return an early duplicate receipt or decide a conflict. The
-lookup reserves nothing. Expiry or another writer can change the result before the
-final atomic publication, which must check the current state again.
+The preliminary CheckWrite avoids uploads for unauthorized or known-expired records
+and stops writes when the catalog cannot be consulted. Success permits upload for
+either an absent or live record; it returns no duplicate receipt or conflict. Every
+error stops the write. The check reserves nothing. Grant changes, expiry or another
+writer can change the result before final publication, which checks state again.
 
 The object store capability creates an immutable object or confirms an identical
 object already exists. It must not overwrite different bytes. Its success requires
@@ -70,7 +66,8 @@ executions the same event. No cache is implemented or selected by this experimen
 
 The catalog capability publishes a single identity atomically. It either creates
 the reference, recognizes an identical accepted reference, or returns a conflict
-without changing the original. Any other publication error has an unknown outcome:
+without changing the original. Confirmed permission denial and expiry are also
+refusals of this attempt. Any other publication error has an unknown outcome:
 the catalog may have committed before the response was lost. No automatic retry or
 rollback is attempted. The caller must retry the same identity and captured bytes.
 A successful commit remains success even if cancellation arrives immediately after.
@@ -85,11 +82,11 @@ reads its object with a byte limit and checks its size and digest. Catalog absen
 is different from catalog unavailability or a missing referenced object. The latter
 cases must not be reported as an absent span. Trace enumeration, pagination and
 multi-span batch atomicity are not selected by this per-record experiment. It does
-not join span/capture records, authorize producer ownership or check parent existence.
+not join span/capture records or check parent existence.
 Either record may be accepted first, as specified in [the capture design](CAPTURE.md).
 The absent peer does not block acceptance or reading of the existing record.
-Producer authority, body validation, retention and query assembly are still absent;
-this primitive must not be exposed directly as a product attachment API.
+Real authentication, body validation, automatic retention and query assembly are
+still absent; this primitive must not be exposed directly as a product attachment API.
 
 ## When one step fails
 
@@ -100,6 +97,7 @@ this primitive must not be exposed directly as a product attachment API.
 | Upload fails, possibly after storing bytes | Unreferenced object may exist | Do not publish; return the upload failure |
 | Upload succeeds; catalog fails before commit | Unreferenced object exists | Return uncertain publication; do not delete the object |
 | Catalog commits; response is lost | Accepted span exists | Return uncertain publication; identical retry resolves it |
+| Current grant or registered owner check refuses publication | Uploaded bytes may be unreferenced | Return denied before disclosing duplicate/conflict/expiry; retain objects |
 | Catalog returns a content conflict | Original span remains accepted; new bytes may be unreferenced | Return conflict; preserve both stores' existing live data |
 | Identity expires after preliminary lookup | Uploaded bytes may be unreferenced | Final publication returns expired; preserve original acceptance |
 | Ingest instance is replaced | Catalog and objects remain available | Fresh coordinator can read and resolve retries |

@@ -4,8 +4,9 @@ This describes agreed contracts and implementation boundaries. The CLI provides
 help/version only. The internal ingest coordinator runs against controlled test
 backends; it has no PostgreSQL/R2 adapter, public capture format or replay runtime.
 Its tests model failures rather than establish remote durability.
-An internal ownership-registration coordinator also uses controlled capabilities;
-it is not yet integrated with record publication or reads.
+An internal ownership-registration coordinator shares its binding contract with
+owner-aware publication and explicit project-reader lookups. Controlled capabilities
+exercise this integration; real credential verification remains absent.
 
 ## Agreed requirements
 
@@ -66,11 +67,13 @@ not guaranteed. Rewind must enforce authenticated producer/execution ownership i
 the first working version, with writing authority scoped to one agent instance
 in one run in one project, as described in [the capture design](CAPTURE.md#producer-authority).
 Trusted catalog registration is the selected ownership binding. The local Registrar
-exercises its retry/refusal contract, but Store does not enforce owner permissions.
+exercises its retry/refusal contract. Store passes authenticated writer attribution
+to the catalog, which checks the binding and current grant atomically with acceptance.
 Read access requires an explicit project-reader permission across the project's
 span and capture records; producer write permission does not imply read permission.
-This policy is selected, not implemented by the tenant-only Store.
-Payload duration, cleanup, write/read authorization integration and combined query
+Controlled tests exercise the separate permissions, original submitter attribution
+and refusal after a grant changes during upload; see [ownership enforcement](AUTHORIZATION.md).
+Payload duration, cleanup, real authentication/grant lifecycles and combined query
 semantics remain to be designed. No expiry or quota mechanism exists yet.
 OTLP reception still needs its own bounded decoding, batch handling and
 protocol responses. Reusing the storage sequence does not implement those contracts.

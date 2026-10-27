@@ -58,7 +58,7 @@ type RegistrationAuthorizer interface {
 // applicable authoritative registration permissions before returning an outcome.
 // Success requires durable recovery of the binding and original attribution.
 // Implementations honor cancellation, are safe for concurrent calls and must not
-// include credentials in errors. This is not yet wired into record publication.
+// include credentials in errors. A record Catalog must use the same binding state.
 type OwnershipCatalog interface {
 	RegisterOwnership(context.Context, Registration) (original Registration, duplicate bool, err error)
 }
@@ -81,8 +81,8 @@ func NewRegistrar(authorizer RegistrationAuthorizer, catalog OwnershipCatalog, m
 }
 
 // Register establishes ownership before either record kind arrives. It does not
-// upload bytes, publish span metadata or enforce ownership in the tenant-only
-// Store. An error is not proof that an earlier attempt did not register the call.
+// upload bytes or publish span metadata. Store enforces the binding through
+// its separate record catalog capability. An error is not proof that an earlier attempt did not register the call.
 func (r *Registrar) Register(ctx context.Context, execution Execution, owner Owner) (RegistrationReceipt, error) {
 	for _, part := range []string{execution.Tenant, execution.Trace, execution.Span, owner.Run, owner.Instance} {
 		if !validRegistrationID(part) {

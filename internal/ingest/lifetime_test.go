@@ -93,34 +93,39 @@ func (c *lifetimeCatalog) expired(ctx context.Context, id Identity) (bool, error
 	return phase != BeforeExpiry, err
 }
 
-func (c *lifetimeCatalog) Publish(ctx context.Context, ref Reference) (bool, error) {
+func (c *lifetimeCatalog) CheckWrite(ctx context.Context, id Identity, a Attribution) error {
 	c.calls++
-	expired, err := c.expired(ctx, ref.Identity)
-	if err != nil {
-		return false, err
-	}
-	if expired {
-		return false, ErrExpired
-	}
-	return c.modelCatalog.Publish(ctx, ref)
+	return c.modelCatalog.CheckWrite(ctx, id, a)
+}
+func (c *lifetimeCatalog) Publish(ctx context.Context, ref Reference, a Attribution) (Receipt, error) {
+	c.calls++
+	return c.modelCatalog.Publish(ctx, ref, a)
+}
+func (c *lifetimeCatalog) Lookup(ctx context.Context, id Identity, principal string) (Receipt, error) {
+	c.calls++
+	return c.modelCatalog.Lookup(ctx, id, principal)
 }
 
-func (c *lifetimeCatalog) Lookup(ctx context.Context, id Identity) (Reference, error) {
-	c.calls++
-	expired, err := c.expired(ctx, id)
-	if err != nil {
-		return Reference{}, err
+func newLifetimeCatalog(t *testing.T, catalog *modelCatalog, lifetime Lifetime) *lifetimeCatalog {
+	t.Helper()
+	c := &lifetimeCatalog{modelCatalog: catalog, id: captureID(), lifetime: lifetime, now: lifetime.PayloadExpiresAt().Add(-time.Hour)}
+	catalog.expiry = func(id Identity) error {
+		expired, err := c.expired(t.Context(), id)
+		if err != nil {
+			return err
+		}
+		if expired {
+			return ErrExpired
+		}
+		return nil
 	}
-	if expired {
-		return Reference{}, ErrExpired
-	}
-	return c.modelCatalog.Lookup(ctx, id)
+	return c
 }
 
 func TestRetainedExpiredIdentityRefusesRetryAndRead(t *testing.T) {
 	_, o, catalog := fixture(t)
 	lifetime := testLifetime(t)
-	c := &lifetimeCatalog{modelCatalog: catalog, id: captureID(), lifetime: lifetime, now: lifetime.PayloadExpiresAt().Add(-time.Hour)}
+	c := newLifetimeCatalog(t, catalog, lifetime)
 	s, err := New(authorizeFunc(allow), o, c, Limits{1024, 2})
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +147,7 @@ func TestRetainedExpiredIdentityRefusesRetryAndRead(t *testing.T) {
 	if r, err := fresh.Write(t.Context(), c.id, data); err != nil || !r.Duplicate {
 		t.Fatalf("live retry=%+v,%v", r, err)
 	}
-	original, err := catalog.Lookup(t.Context(), c.id)
+	original, err := catalog.Lookup(t.Context(), c.id, "reader-a")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,9 +165,9 @@ func TestRetainedExpiredIdentityRefusesRetryAndRead(t *testing.T) {
 				t.Fatalf("expired write=%+v,%v", r, err)
 			}
 		}
-		got, err := catalog.Lookup(t.Context(), c.id)
-		if err != nil || got != original || c.lifetime != lifetime {
-			t.Fatalf("refusal changed reference/deadlines=%+v,%v", got, err)
+		got := catalog.rows[c.id]
+		if got != original.Reference || c.lifetime != lifetime {
+			t.Fatalf("refusal changed reference/deadlines=%+v", got)
 		}
 		requireRead(t, fresh, sampleID, []byte("span metadata"))
 	}
@@ -197,7 +202,7 @@ func testExpiryCheck(t *testing.T, duringUpload bool) {
 	t.Helper()
 	_, o, catalog := fixture(t)
 	lifetime := testLifetime(t)
-	c := &lifetimeCatalog{modelCatalog: catalog, id: captureID(), lifetime: lifetime, now: lifetime.PayloadExpiresAt().Add(-time.Hour)}
+	c := newLifetimeCatalog(t, catalog, lifetime)
 	s, err := New(authorizeFunc(allow), o, c, Limits{1024, 2})
 	if err != nil {
 		t.Fatal(err)
@@ -234,7 +239,7 @@ func testExpiryCheck(t *testing.T, duringUpload bool) {
 	} else if o.creates.Load() != creates || o.count() != 0 || c.calls != calls+1 {
 		t.Fatal("known expired identity reached upload or publication")
 	}
-	if ref, err := catalog.Lookup(t.Context(), c.id); err != nil || ref != r.Reference {
-		t.Fatalf("expired retry changed acceptance=%+v,%v", ref, err)
+	if ref := catalog.rows[c.id]; ref != r.Reference {
+		t.Fatalf("expired retry changed acceptance=%+v", ref)
 	}
 }
