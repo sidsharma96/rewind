@@ -98,10 +98,11 @@ enforce revocation. An explicit elapsed-closed value now preserves saved closure
 across supplied clock regression; once durably recorded, closure must not reopen.
 This cannot correct an unobserved clock jump and can retain an early closure caused
 by a false forward jump. The registration adapter now persists bindings and elapsed closure in PostgreSQL.
-Authenticated run-control operations, record-side persistence and general provider
+Authenticated run-control operations, native record publication and general provider
 clock/failover guarantees remain unimplemented.
 Cleanup, real authentication/grant lifecycles and combined query semantics remain
-to be designed. No expiry or quota mechanism exists yet.
+to be designed. Lookup can save expiry; no autonomous expiry worker or storage quota
+mechanism exists yet.
 OTLP reception still needs its own bounded decoding, batch handling and
 protocol responses. Reusing the storage sequence does not implement those contracts.
 The scoped mapping investigation and next unresolved choice are described in

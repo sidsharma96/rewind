@@ -2,8 +2,8 @@
 
 Status: implemented as an internal coordinator with controlled test backends.
 PostgreSQL and R2 are the chosen architecture. Internal adapters now cover
-ownership registration and immutable objects; record publication and remote
-infrastructure do not exist yet.
+ownership registration, known-record lookup and immutable objects; record publication
+and a remotely deployed catalog do not exist yet.
 This experiment implements the ordering and error handling with controlled test
 backends. It cannot establish provider durability, SQL isolation or recovery after
 real host loss. It adds no public endpoint, wire format or shared storage library.

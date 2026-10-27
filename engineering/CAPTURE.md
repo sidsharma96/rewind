@@ -247,8 +247,10 @@ than acquiring history from a later binding. Real credential/grant lifetimes,
 admission quotas, binding retention and provider enforcement remain unresolved.
 The native registration adapter now persists bindings and checks creator grants
 and both run states in PostgreSQL; see [the SQL scope](POSTGRES.md#first-native-operation).
-It has no record table or Store publication implementation, so it must not be
-combined with an unrelated binding store and treated as enforced record ownership.
+The same adapter now reads trusted seeded record rows under exact project-reader
+grants and saves expiry when needed. It still has no Store publication implementation
+and must not be combined with an unrelated binding store and treated as enforced
+record acceptance.
 Its installer requires a new owned schema; it migrates no legacy dataset.
 
 
