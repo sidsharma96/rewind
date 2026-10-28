@@ -43,7 +43,7 @@ status, typed attributes, events, links, flags, trace state, dropped-data counts
 resource context, instrumentation scope and their schema URLs. This is a list of
 compatibility concerns, not an approved Go struct or support claim. Specify which
 fields affect equality, supported value types, ordering/default rules and treatment
-of unknown fields before freezing a version. Equal span IDs in unrelated tenants
+of unsupported fields under the selected refusal policy before freezing a version. Equal span IDs in unrelated tenants
 must not share acceptance state.
 
 Payloads are separate concepts from these metadata fields. Store exact captured
@@ -77,8 +77,9 @@ ownership. ProtoJSON emits large integers as decimal strings, IDs as Base64 and
 enums as names by default. Its JSON round trip loses the injected unknown protobuf
 wire field at both the root and a nested attribute, while preserving known fields.
 Default ProtoJSON decoding refuses an unknown JSON field but accepts an empty Span
-without IDs. These are observed limitations, not selected reject/drop or validation
-policies. Successful conversion cannot replace acceptance validation. Fixed
+without IDs. These are observed library limitations; the selected internal
+unsupported-field policy below refuses that loss before encoding. Successful
+conversion cannot replace acceptance validation. Fixed
 in-memory fixtures are not a bounded network decoder or an OTLP receiver. No
 performance or remote-durability claim follows.
 
@@ -121,13 +122,45 @@ performance advantage over plain ProtoJSON. Do not depend on byte stability acro
 builds or confuse compact/sorted outer JSON with canonical logical contents: the
 selected retry strategy still needs its decoded comparison fallback.
 
-Unknown-field handling, exact accepted field names, validation, normalization and
-saved-version rules remain open. The paired lab decoder is not a standards-complete
+The selected internal-record policy refuses unsupported metadata before saving,
+rather than save only the known portion. The lab encoder checks unknown
+protobuf wire bytes at every visited message before calling ProtoJSON. That includes
+resource/scope context, span, events, links, status, nested arrays and key/value
+values, not only the packet root. Refusal must preserve the original message and
+return no encoded bytes. Ordinary new attribute names remain supported: their keys
+are data inside known schema fields. Numeric enum values remain representable by
+the codec; semantic value validation is a separate contract.
+
+Default strict ProtoJSON decoding already refuses unknown JSON field names in the
+paired lab decoder; it must not enable `DiscardUnknown` for saved metadata. This
+is different from OTLP JSON reception, whose standard requires ignoring unknown
+transport fields. A future adapter must document that projection and cannot claim
+the JSON saved record preserves every original transport field. No adapter or real
+record acceptance exists yet. The encoder returns the distinct lab error
+`errUnsupportedMetadata` for visited
+unknown wire metadata; public error mapping is not selected by that test helper.
+`otlp_unknown_test.go` checks 25 message positions, direct injection and a real
+binary-protobuf parse, default JSON refusal and unchanged input. The raw ProtoJSON
+loss check remains the simple negative oracle; it is not a permitted save path.
+
+The simplest alternative is dropping unsupported portions, which accepts more
+mixed-version input but loses evidence before retry comparison or replay can inspect
+it. Opaque preservation would require an explicitly versioned representation and
+is not selected. A schema upgrade can explicitly add supported fields later; it
+must revisit this check and the saved-format compatibility rules. The recursive
+check uses the existing bounded walk: O(visited known fields and values) time,
+O(depth) stack, constant work to check the length of each message's unknown byte
+slice, no copying or parsing that slice and no object/catalog operation. Parent-only
+checking misses nested loss; clearing unknown bytes would violate the policy.
+
+Exact accepted field names, semantic validation, normalization and saved-version
+rules remain open. The paired lab decoder is not a standards-complete
 network parser. Aliases for converted IDs or their parent paths are refused so
 ProtoJSON cannot reinterpret unconverted hexadecimal text as Base64. Other accepted
 ProtoJSON spellings/defaults do not define OTLP reception.
 OTLP JSON's transport rule to ignore unknown fields is separate from the policy
-for unsupported fields still present in an internal record. Error/corruption must
+that refuses unsupported fields still present in an internal record. Error/corruption
+must
 not turn into absence or equality. Revisit the narrow adapter if special cases grow
 or real profiling shows material overhead; changing the core model requires review.
 
