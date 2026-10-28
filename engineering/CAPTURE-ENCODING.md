@@ -5,6 +5,9 @@ unchanged request/response bytes. This selects the representation direction, not
 the lab's header, limits or illustrative metadata as a frozen production format.
 No public codec, normalizer, endpoint or integration with ingest is introduced.
 OpenTelemetry field semantics, canonical equality and compatibility remain open.
+Retry comparison uses the accepted object when stored bytes differ; no separate
+logical-content digest is selected. This is a design decision, not implemented
+behavior; see [retry comparison](#retry-comparison-direction).
 The selected compression policy has two gates: below a size threshold, store raw;
 at or above it, try gzip and keep it only if smaller. The threshold, gzip setting
 and production representation remain open; the gzip variants are still test-only.
@@ -224,10 +227,66 @@ production default. An 8 KiB gate favors storage; 64 KiB favors skipping work.
 Real size/content frequency, concurrent memory and latency budgets can change the
 recommendation. Compression level trades CPU/allocation for further size savings.
 
-Before integration, settle how retries compare normalized content independently of
-stored bytes. The current opaque-byte coordinator uses one physical digest and
-requires an identical returned reference; it does not implement that distinction.
-A separate comparison digest in the catalog or reading/decompressing the accepted
-object on a changed-encoding retry are credible alternatives. No strategy, schema
-change or production codec is selected here. Tenant/trace/span/kind remains record
-identity; neither digest would replace it or authorize a caller.
+## Retry comparison direction
+
+The selected strategy keeps the existing stored-object SHA-256 digest without
+adding a separate logical-content digest to each catalog row. An authorized
+retry with the same identity and matching stored digest/size can take the quick
+path. If the stored bytes differ, read the accepted object, verify its stored
+digest/size, decode within explicit bounds, then compare defined metadata values
+and exact captured bytes and body states. Equal contents return the original
+receipt; different contents conflict without replacing the accepted record.
+Tenant/trace/span/kind remains record identity. A digest grants no authority.
+
+This needs a writer-scoped catalog check, not the public reader lookup: a writer
+does not automatically have project-reader permission. Only trusted coordinator
+code may read accepted contents for this comparison; it must not return them to
+the writer. Keep object reads and decoding outside catalog transactions. Final
+resolution must acquire the normal catalog locks and recheck current ownership,
+grant, run state, expiry and the accepted reference that was compared. A prior
+comparison is not authority to bypass a later revocation or saved expiry. If the
+reference changed during the comparison, do not reuse that result; fail explicitly
+or retry within a fixed bound. A cleanup/read failure or corrupt object is an
+operational/integrity error, not evidence of absence, equality or conflict. Preserve
+original attribution, acceptance time and expiry on a duplicate. Do not rewrite
+accepted objects or delete uncertain uploads.
+
+The expectation is few different-byte, same-identity comparisons in healthy steady
+state with one stable encoding. New identities have no accepted object to compare;
+ordinary identical-byte retries need no extra comparison read; trace reads and
+replays do not enter this ingest path. Mixed encoders, compression changes and
+producer bugs can create bursts. There is no production traffic or measured
+comparison frequency. Do not confuse this conditional rate with overall retry rate.
+
+The alternative is a second digest over normalized contents, allowing equality
+checks in the catalog without reading the accepted object. It adds hashing work
+and retained catalog bytes, but avoids comparison object I/O and simplifies final
+resolution. A disposable layout probe on PostgreSQL 16.13 Linux/arm64 used 100,000
+synthetic rows based on the current record column types, with identical primary
+keys and no digest index. Adding a 32-byte bytea digest increased heap plus index
+size from 24,313,856 to 27,361,280 bytes, about 12.5% for that fixture. Padding and
+page packing make this a layout-specific result, not a universal bytes-per-row rule.
+
+A separate Go 1.27.2 darwin/arm64 Apple M1 probe used the lab's varied-text hybrid
+fixtures, BestSpeed, GOMAXPROCS=1 and five 150 ms samples. At 32 KiB, an additional
+SHA-256 over already-normalized bytes took median 15.297 microseconds
+(14.815–16.843), with no allocation. Verifying, expanding and comparing an old
+object took 186.448 microseconds (151.272–248.604), allocating 122,992 bytes.
+Those are local component costs, not end-to-end strategies: network, authorization,
+normalization, version conversion, database writes, WAL and replication were not
+timed. The selected strategy can use less CPU as well as catalog space when extra
+comparisons are uncommon. At a high comparison rate, object reads, decompression,
+allocation and waiting can dominate. No fixed rate or monetary break-even follows.
+
+For W eligible attempts per second and fraction q requiring an extra comparison,
+the selected path adds up to W*q comparison reads per second. Each reads S stored
+bytes and does O(S + R) work with O(S + R) transient space for R expanded bytes,
+both bounded. The alternative adds an O(R) content hash on each attempt and a
+digest on each retained row. Bound active work, including the comparison, rather
+than launching an unbounded goroutine per retry. Revisit using measured comparison
+rates, encoder versions, bytes, latency and failures, especially during upgrades.
+
+The current opaque-byte coordinator still requires an identical returned reference.
+Neither typed equality nor the selected fallback exists yet. Schema, normalization,
+version compatibility, concrete capability/API changes and fault tests must precede
+integration; this decision does not freeze them or add a production codec.

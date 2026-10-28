@@ -173,6 +173,11 @@ tool state out of source history. This artifact policy does not change runtime
 serialization formats. Individual source files are limited to 1 MiB. Do not rename
 artifacts or force-add private files to bypass a check.
 
+After local benchmarking, delete disposable probe scripts, copied experiment
+packages, generated comparison visualizations, previews and browser profiles.
+Retain compact measurement evidence, required review reports and maintained tests;
+preserve book sources and selected design references.
+
 Inspect the actual index before committing. `make hooks-install` configures the
 versioned hook only if it does not replace a custom hook setting. The hook and CI
 check staged artifacts and whitespace; they do not run or certify every test.
