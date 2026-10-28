@@ -72,8 +72,11 @@ explicit JSON serialization boundary. The [metadata investigation](CAPTURE.md#ge
 checks that boundary. The selected serializer direction is a narrow adapter around
 `protojson`: numeric enums and hexadecimal IDs at actual span/link fields, without
 a parallel handwritten metadata schema or Collector data model. The maintained lab
-exercises that boundary before acceptance integration. Full record schema,
-unsupported-field policy, normalization and version/equality rules remain open.
+exercises that boundary before acceptance integration. The selected internal-record
+policy refuses unsupported metadata rather than discard it: unknown protobuf wire
+fields anywhere in the metadata must fail before JSON encoding. OTLP JSON transport
+compatibility remains a separate adapter responsibility. Full record schema,
+normalization, semantic validation and version/equality rules remain open.
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
 supports this direction. Its header, fixture schema and limits are not frozen

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"unicode/utf8"
 
@@ -14,10 +15,13 @@ import (
 )
 
 // This is the selected serializer direction exercised in the test lab, not a
-// production saved format or OTLP receiver. Admission, unknown-field policy,
-// normalization, versions and logical retry equality remain separate contracts.
+// production saved format or OTLP receiver. Unsupported internal wire fields are
+// refused. Admission, semantic validation, normalization, versions and logical
+// retry equality remain separate contracts.
 // Callers own messages exclusively during encoding. All results are owned copies.
 const otlpJSONDepth = 64 // Experimental bound, not a production default.
+
+var errUnsupportedMetadata = errors.New("unsupported experimental metadata")
 
 func encodeOTLPJSON(in *tracepb.TracesData) ([]byte, error) {
 	if in == nil {
@@ -26,8 +30,8 @@ func encodeOTLPJSON(in *tracepb.TracesData) ([]byte, error) {
 	// Bound traversal before protojson sees a cyclic or oversized Go message.
 	// This work budget counts input bytes and values; it is not a peak-memory cap.
 	budget := maxMetadata
-	if !boundedOTLPMessage(in.ProtoReflect(), 0, &budget) {
-		return nil, errInvalid
+	if err := validateOTLPMessage(in.ProtoReflect(), 0, &budget); err != nil {
+		return nil, err
 	}
 	b, err := (protojson.MarshalOptions{UseEnumNumbers: true}).Marshal(in)
 	if err != nil || checkOTLPJSON(b) != nil {
@@ -45,8 +49,9 @@ func decodeOTLPJSON(b []byte) (*tracepb.TracesData, error) {
 		return nil, errInvalid
 	}
 	var out tracepb.TracesData
-	// Default unknown-field/alias behavior belongs to this lab, not a chosen
-	// public decoder policy. OTLP reception still needs its own exact contract.
+	// Saved metadata must not silently discard unknown JSON fields. Keep the
+	// default strict decoder; a future OTLP receiver has a different transport
+	// rule. Public error mapping and complete syntax validation remain open.
 	err = (protojson.UnmarshalOptions{RecursionLimit: otlpJSONDepth}).Unmarshal(b, &out)
 	if err != nil {
 		return nil, errInvalid // Never return a partially populated message.
@@ -54,45 +59,52 @@ func decodeOTLPJSON(b []byte) (*tracepb.TracesData, error) {
 	return &out, nil
 }
 
-func boundedOTLPMessage(m protoreflect.Message, depth int, budget *int) bool {
+func validateOTLPMessage(m protoreflect.Message, depth int, budget *int) error {
 	if depth > otlpJSONDepth || *budget <= 0 {
-		return false
+		return errInvalid
+	}
+	// ProtoJSON drops these bytes. Check every message, including nested
+	// attribute values, without clearing, copying or interpreting the unknowns.
+	if len(m.GetUnknown()) != 0 {
+		return errUnsupportedMetadata
 	}
 	*budget -= 1
-	ok := true
+	var err error
 	m.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
 		// The pinned trace schema has no map fields. Refuse an unsupported
 		// representation rather than assuming it behaves like a message.
 		if fd.IsMap() {
-			ok = false
+			err = errUnsupportedMetadata
 			return false
 		}
-		visit := func(v protoreflect.Value) bool {
+		visit := func(v protoreflect.Value) error {
 			*budget -= 1
 			switch fd.Kind() {
 			case protoreflect.MessageKind:
-				return boundedOTLPMessage(v.Message(), depth+1, budget)
+				return validateOTLPMessage(v.Message(), depth+1, budget)
 			case protoreflect.StringKind:
 				*budget -= len(v.String())
 			case protoreflect.BytesKind:
 				*budget -= len(v.Bytes())
 			}
-			return *budget >= 0
+			if *budget < 0 {
+				return errInvalid
+			}
+			return nil
 		}
 		if fd.IsList() {
 			list := v.List()
 			for i := 0; i < list.Len(); i++ {
-				if !visit(list.Get(i)) {
-					ok = false
+				if err = visit(list.Get(i)); err != nil {
 					return false
 				}
 			}
 			return true
 		}
-		ok = visit(v)
-		return ok
+		err = visit(v)
+		return err == nil
 	})
-	return ok
+	return err
 }
 
 // Check duplicate keys before decoding objects into maps, which would otherwise
