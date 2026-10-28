@@ -51,6 +51,54 @@ truncated and present data, including a present zero-byte body. Those states do 
 by themselves establish that a particular replay adapter has all required inputs.
 Do not manufacture a body by serializing attributes and call it the original bytes.
 
+## One span with its context
+
+The user selected a logical span record that includes its resource, instrumentation
+scope and both schema URLs alongside one generated span. Do not replace that
+context with a reference to a separately retained context object. This repeats
+context bytes between saved span records, but decoding a span's metadata does not
+need a second context-object lookup or a shared-context retention protocol.
+Physical batching and packing remain separate choices. Captured bodies and trusted
+execution attribution remain separate from this descriptive metadata.
+
+`internal/record` defines a concrete span/context representation and `SpanAt`,
+selecting one span at zero-based resource/scope/span indexes in generated
+`TracesData`. Selection takes context from that exact path, retain nil versus
+present empty context messages and both schema URLs, and rejects invalid paths with
+no partial result. Its `OTLP` method rebuilds a one-resource/one-scope/one-span generated
+packet for the existing lab codec, without duplicating generated field definitions.
+This is an internal association operation, not a complete saved format or validation
+boundary. Do not add storage, authentication or ingest dependencies to it.
+
+Selection and reconstructed wrappers borrow resource/scope/span pointers, and are
+read-only while used. New wrapper messages/slices do not imply a deep snapshot or
+exclusive ownership of the reachable graph. Callers retaining a mutable input must
+explicitly clone before in-place normalization. An owner can normalize its whole
+fresh packet before selecting read-only views. Encoded bytes are the independent
+output; no mandatory full-message clone is introduced by association itself.
+
+Selection refuses unknown wire fields on the selected packet/resource-group/scope-group
+wrappers before reconstruction can drop them. Unknown fields inside retained
+resource/scope/span messages remain attached and the existing encoder guard must
+refuse them. Unselected siblings are not part of the selected record; this operation
+does not accept/reject an OTLP batch. Pin wrapper field coverage to the existing
+protocol schema so a dependency upgrade cannot quietly discard a new known field.
+
+Selection costs O(1) path access and unknown-slice length checks; reconstruction
+allocates a constant number of wrapper messages and single-element slices. It does
+not traverse or copy attributes or bodies. Encoding/validation retain their separate
+costs. No object requests, catalog operations, workers or recovery effects occur in
+this operation. Missing external shared context would be a new failure dependency
+under the rejected alternative. Tests cover multiple resource/scope/span paths with
+distinct contexts/URLs, optional-context presence, malformed paths, wrapper unknowns,
+retained nested unknowns, pointer ownership and independent reconstructed shells.
+The maintained lab encodes individual records with both grouping URLs and Resource
+entity references, then decodes them after original input mutation. A property
+fuzzer compares selected reconstruction against cloning/pruning the input, with
+individual codec round trips for encodable selections. That is memory/format evidence, not host-loss
+or remote durability evidence. Identity mapping, full semantic/equality rules,
+record framing/version and runtime codec integration remain open.
+
 ## Generated metadata and JSON
 
 Use `go.opentelemetry.io/proto/otlp` v1.9.0 for the selected generated types. Its
