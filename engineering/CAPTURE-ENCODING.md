@@ -11,8 +11,9 @@ behavior; see [retry comparison](#retry-comparison-direction).
 The selected compression policy has two gates: below a size threshold, store raw;
 at or above it, try gzip and keep it only if smaller. The selected starting
 threshold is configurable, defaulting to 32 KiB (32,768 bytes) for the complete
-hybrid record before compression or an outer encoding marker. The gzip setting
-and production representation remain open; the gzip variants are still test-only.
+hybrid record before compression or an outer encoding marker. The selected gzip
+starting setting is configurable BestSpeed. The production representation remains
+open; the gzip variants are still test-only.
 
 ## Question and baseline
 
@@ -126,8 +127,8 @@ hybrid binary encode allocation to median 4,484,660 bytes, versus 1,122,925 with
 gzip. Allocations are not a retained-memory or peak-memory measurement.
 
 The user selected JSON metadata plus raw bodies and the two-gate compression
-policy, with a configurable 32 KiB starting threshold. The gzip setting remains
-undecided. There is no claim about every gzip level, another
+policy, with a configurable 32 KiB starting threshold and BestSpeed gzip setting.
+There is no claim about every gzip level, another
 compressor or a production distribution. A public format still needs all capture
 states, exact supported metadata semantics, normalization, framing compatibility
 and retries across encoder versions. In particular, gzip output is not covered by
@@ -230,10 +231,15 @@ exactly 32,768 bytes is eligible for a compression attempt. This is a size gate,
 not a maximum accepted record size or a bound on concurrent memory. An 8 KiB gate
 favors small-text storage; 64 KiB skips more work. The selection is a tuning
 hypothesis, not a measured optimum. Real size/content frequency, concurrent memory
-and latency budgets can change it. BestSpeed remains the provisional recommendation
-for the separate gzip-setting choice, which is not yet selected. Compression level
-trades CPU/allocation for further size savings. No production codec or runtime
-configuration is introduced by recording this default.
+and latency budgets can change it. The selected gzip starting setting is configurable
+BestSpeed: favor lower compression CPU and allocation over DefaultCompression's extra
+size savings. At 32 KiB in the varied-text fixture, BestSpeed kept 7,416 bytes
+versus DefaultCompression's 6,066; its encode median was 135.067 rather than
+222.612 microseconds. These include hybrid encoding and a compression attempt,
+not network waiting. Allocated bytes per operation are not retained memory.
+Revisit the setting with actual content, concurrency and latency/storage budgets;
+the choice is not a measured optimum across workloads. No production codec or
+runtime configuration is introduced by recording these defaults.
 
 ## Retry comparison direction
 
