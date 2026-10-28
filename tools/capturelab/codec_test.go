@@ -85,27 +85,31 @@ func codecs() []codec {
 				}
 				return zipLevel(b, setting.level)
 			}, func(b []byte) (record, error) {
-				if len(b) > maxEncoded {
-					return record{}, errInvalid
-				}
-				r, err := gzip.NewReader(bytes.NewReader(b))
-				if err != nil {
-					return record{}, err
-				}
-				// +1 distinguishes exactly-at-limit from oversized expanded output.
-				decoded, readErr := io.ReadAll(io.LimitReader(r, maxEncoded+1))
-				closeErr := r.Close()
-				if err := errors.Join(readErr, closeErr); err != nil {
-					return record{}, err
-				}
-				if len(decoded) > maxEncoded {
-					return record{}, errInvalid
-				}
-				return base.decode(decoded)
+				return decodeGzip(b, base.decode)
 			}})
 		}
 	}
 	return result
+}
+
+func decodeGzip(b []byte, decode func([]byte) (record, error)) (record, error) {
+	if len(b) > maxEncoded {
+		return record{}, errInvalid
+	}
+	r, err := gzip.NewReader(bytes.NewReader(b))
+	if err != nil {
+		return record{}, err
+	}
+	// +1 distinguishes exactly-at-limit from oversized expanded output.
+	decoded, readErr := io.ReadAll(io.LimitReader(r, maxEncoded+1))
+	closeErr := r.Close()
+	if err := errors.Join(readErr, closeErr); err != nil {
+		return record{}, err
+	}
+	if len(decoded) > maxEncoded {
+		return record{}, errInvalid
+	}
+	return decode(decoded)
 }
 
 func zip(b []byte) ([]byte, error) {

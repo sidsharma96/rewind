@@ -57,7 +57,9 @@ well as span fields; a four-field request/response struct is not that record mod
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
 supports this direction. Its header, fixture schema and limits are not frozen
-production contracts; compression remains a separate decision. No production
+production contracts. The selected compression policy skips records below a size
+threshold and otherwise keeps gzip only if smaller; its threshold and setting
+remain open. No production
 codec or normalizer exists yet.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
