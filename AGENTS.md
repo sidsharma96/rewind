@@ -45,7 +45,12 @@ Explain implementation decisions to the user as a newcomer. Start with one concr
 example, use a simple diagram or small comparison table when it clarifies the choice,
 then show short Go snippets and explain unfamiliar terms. Present one consequential
 decision at a time, with the trade-offs and a recommendation, and ask which option
-the user prefers. Keep routine implementation moving between decision points.
+the user prefers. Ask in ordinary chat prose, with readable options, reasoning,
+trade-offs, a defense of the recommendation and short snippets where useful. Do not
+use clickable/tappable question forms unless the user explicitly requests them.
+Base recommendations on the finished project's requirements; distinguish a useful
+implementation step from the intended final architecture. Keep routine implementation
+moving between decision points.
 After recording an answer, continue the authorized work to the next meaningful
 checkpoint in the same turn; do not stop merely to report that the answer was saved.
 

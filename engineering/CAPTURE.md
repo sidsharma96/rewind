@@ -82,12 +82,63 @@ policies. Successful conversion cannot replace acceptance validation. Fixed
 in-memory fixtures are not a bounded network decoder or an OTLP receiver. No
 performance or remote-durability claim follows.
 
-The JSON serializer, its options, field validation, normalization and version policy
-remain open. Generated structs avoid duplicate protocol field definitions, but
-still need a deliberate saved-JSON boundary. ProtoJSON and OTLP's transport JSON
-have different ID conventions; adopting a saved serializer does not implement an
-OTLP endpoint. A handwritten mapping is the credible alternative: it controls JSON
-shape at the cost of maintained conversion code and compatibility tests.
+## Selected narrow JSON adapter
+
+Use `protojson` with numeric enums, adapting IDs only along the generated trace
+schema's resource/scope/span path and the span's direct links. Convert trace IDs,
+span IDs and parent span IDs between Base64 and hexadecimal; leave metadata
+`bytesValue` in Base64 and ordinary attributes named `traceId` unchanged. Reuse the
+generated schema instead of maintaining parallel structs for every field.
+This selects encoding conventions, not an OTLP endpoint or the complete saved record.
+
+The paired codec in `tools/capturelab/otlp_codec_test.go` implements conversion on
+bounded in-memory JSON fixtures. It preserves tested typed values and context, uses
+raw JSON fragments rather than floating-point maps, rejects duplicate keys before
+map conversion and checks nonempty ID lengths. Tests inspect exact output fields,
+compare an independently produced Collector JSON fixture, exercise malformed input
+and ownership, and fuzz the paired decoder. An input-value traversal budget and
+depth check stop oversized or cyclic Go messages before serialization; these bounds
+cover known fields, not opaque unknown protobuf storage. The fixture byte/depth
+bounds are experimental, not selected production admission limits. An encoder's
+check after serialization limits returned bytes, not peak memory used
+to serialize an already allocated Go message. A separate temporary module checked
+the maintained helpers against Collector pdata v1.70.0 in both directions for 22
+synthetic value cases (44 structural comparisons). No Collector dependency was added;
+normal tests retain one synthetic inline peer fixture. The temporary module was
+removed after its compact evidence was saved.
+
+A full handwritten mapping is the simplest schema-specific alternative but duplicates
+field definitions and conversions. Collector `pdata` provides a public OTLP JSON
+codec with a different data model; bridging from the selected canonical generated
+types needs protobuf encoding/decoding or field mapping. No new runtime dependency
+or Collector service is selected. The Go SDK's generated-type OTLP JSON codec is
+`internal` and cannot be imported by Rewind.
+
+For B metadata JSON bytes the narrow conversion adds linear scans/copies at fixed
+schema depth and O(B) temporary space; no object requests, catalog transactions,
+workers or remote I/O. It does not process captured bodies. There is no measured
+performance advantage over plain ProtoJSON. Do not depend on byte stability across
+builds or confuse compact/sorted outer JSON with canonical logical contents: the
+selected retry strategy still needs its decoded comparison fallback.
+
+Unknown-field handling, exact accepted field names, validation, normalization and
+saved-version rules remain open. The paired lab decoder is not a standards-complete
+network parser. Aliases for converted IDs or their parent paths are refused so
+ProtoJSON cannot reinterpret unconverted hexadecimal text as Base64. Other accepted
+ProtoJSON spellings/defaults do not define OTLP reception.
+OTLP JSON's transport rule to ignore unknown fields is separate from the policy
+for unsupported fields still present in an internal record. Error/corruption must
+not turn into absence or equality. Revisit the narrow adapter if special cases grow
+or real profiling shows material overhead; changing the core model requires review.
+
+Pinned implementation references:
+
+- [Collector pdata v1.70.0 JSON codec](https://github.com/open-telemetry/opentelemetry-collector/blob/pdata/v1.70.0/pdata/ptrace/json.go),
+  `JSONMarshaler.MarshalTraces` and `JSONUnmarshaler.UnmarshalTraces`.
+- [Collector protobuf bridge](https://github.com/open-telemetry/opentelemetry-collector/blob/pdata/v1.70.0/pdata/ptrace/pb.go),
+  `ProtoMarshaler` and `ProtoUnmarshaler`.
+- [Go SDK v1.47.0 internal codec](https://github.com/open-telemetry/opentelemetry-go/blob/v1.47.0/exporters/otlp/otlptrace/otlptracehttp/internal/otlpjson/export_trace_service_request.go),
+  `MarshalExportTraceServiceRequest` and the parallel field mappings.
 
 ## Compatibility references and required checks
 
