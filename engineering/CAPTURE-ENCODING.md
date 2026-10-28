@@ -9,7 +9,9 @@ Retry comparison uses the accepted object when stored bytes differ; no separate
 logical-content digest is selected. This is a design decision, not implemented
 behavior; see [retry comparison](#retry-comparison-direction).
 The selected compression policy has two gates: below a size threshold, store raw;
-at or above it, try gzip and keep it only if smaller. The threshold, gzip setting
+at or above it, try gzip and keep it only if smaller. The selected starting
+threshold is configurable, defaulting to 32 KiB (32,768 bytes) for the complete
+hybrid record before compression or an outer encoding marker. The gzip setting
 and production representation remain open; the gzip variants are still test-only.
 
 ## Question and baseline
@@ -124,7 +126,8 @@ hybrid binary encode allocation to median 4,484,660 bytes, versus 1,122,925 with
 gzip. Allocations are not a retained-memory or peak-memory measurement.
 
 The user selected JSON metadata plus raw bodies and the two-gate compression
-policy. Its threshold and gzip setting remain undecided. There is no claim about every gzip level, another
+policy, with a configurable 32 KiB starting threshold. The gzip setting remains
+undecided. There is no claim about every gzip level, another
 compressor or a production distribution. A public format still needs all capture
 states, exact supported metadata semantics, normalization, framing compatibility
 and retries across encoder versions. In particular, gzip output is not covered by
@@ -220,12 +223,17 @@ attempt the same work. Boundaries were checked at one byte below, exactly at and
 one byte above each threshold. Equal-size compressed results and operational
 compression failures were separately injected; an error is not a raw success.
 
-The provisional recommendation is 32 KiB with BestSpeed for a first implementation:
-avoid fresh gzip state on small records while testing substantial text savings
-above the gate. This is a tuning hypothesis, not a measured optimum or selected
-production default. An 8 KiB gate favors storage; 64 KiB favors skipping work.
-Real size/content frequency, concurrent memory and latency budgets can change the
-recommendation. Compression level trades CPU/allocation for further size savings.
+The selected starting threshold is configurable with a 32 KiB default: avoid fresh
+gzip state on small records while retaining substantial text savings above the
+gate. Apply it to the complete hybrid record, including metadata and framing;
+exactly 32,768 bytes is eligible for a compression attempt. This is a size gate,
+not a maximum accepted record size or a bound on concurrent memory. An 8 KiB gate
+favors small-text storage; 64 KiB skips more work. The selection is a tuning
+hypothesis, not a measured optimum. Real size/content frequency, concurrent memory
+and latency budgets can change it. BestSpeed remains the provisional recommendation
+for the separate gzip-setting choice, which is not yet selected. Compression level
+trades CPU/allocation for further size savings. No production codec or runtime
+configuration is introduced by recording this default.
 
 ## Retry comparison direction
 

@@ -68,9 +68,11 @@ The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
 supports this direction. Its header, fixture schema and limits are not frozen
 production contracts. The selected compression policy skips records below a size
-threshold and otherwise keeps gzip only if smaller; its threshold and setting
-remain open. No production
-codec or normalizer exists yet.
+threshold and otherwise keeps gzip only if smaller. Its selected starting default
+is a configurable 32 KiB for the complete uncompressed hybrid record, including
+metadata and framing but excluding any outer encoding marker; equality with the
+threshold attempts compression. The gzip setting remains open. No production codec,
+runtime compression configuration or normalizer exists yet.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
 needed for replay; missing capture must not be represented as an empty request or

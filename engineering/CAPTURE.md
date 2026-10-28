@@ -5,7 +5,9 @@ OpenTelemetry-compatible internal record and a later OTLP adapter. No public cap
 schema, saved format, receiver or record normalizer is implemented. The selected
 saved layout is versioned framing followed by JSON metadata and exact raw request
 and response bytes. Compression uses a size gate, then keeps gzip only if smaller;
-the threshold and gzip setting remain open. Header details, complete metadata/body-state
+the selected starting threshold is configurable with a 32 KiB default for the
+complete hybrid record before compression or an outer encoding marker. The gzip
+setting remains open. Header details, complete metadata/body-state
 rules and limits also remain open. The current
 ingest coordinator receives opaque bytes and does not know OpenTelemetry types.
 An isolated [encoding experiment](CAPTURE-ENCODING.md) compares full JSON with
