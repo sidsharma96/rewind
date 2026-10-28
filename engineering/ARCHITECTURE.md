@@ -69,8 +69,11 @@ resource, scope and typed attributes. Rewind owns validation, normalization, cap
 bodies, authorization and saved-format rules. This avoids maintaining parallel
 protocol field definitions but adds OTLP/protobuf dependencies and still needs an
 explicit JSON serialization boundary. The [metadata investigation](CAPTURE.md#generated-metadata-and-json)
-checks that boundary; no full schema, serializer or normalizer is selected by the
-model choice.
+checks that boundary. The selected serializer direction is a narrow adapter around
+`protojson`: numeric enums and hexadecimal IDs at actual span/link fields, without
+a parallel handwritten metadata schema or Collector data model. The maintained lab
+exercises that boundary before acceptance integration. Full record schema,
+unsupported-field policy, normalization and version/equality rules remain open.
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
 supports this direction. Its header, fixture schema and limits are not frozen

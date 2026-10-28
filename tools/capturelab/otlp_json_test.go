@@ -81,8 +81,11 @@ func TestOTLPJSONPacketRoundTrip(t *testing.T) {
 	}
 }
 
-func TestOTLPJSONValues(t *testing.T) {
-	cases := []struct {
+func otlpValues() []struct {
+	name string
+	in   *commonpb.AnyValue
+} {
+	return []struct {
 		name string
 		in   *commonpb.AnyValue
 	}{
@@ -104,7 +107,10 @@ func TestOTLPJSONValues(t *testing.T) {
 		}}}}},
 		{"empty-key-values", &commonpb.AnyValue{Value: &commonpb.AnyValue_KvlistValue{KvlistValue: &commonpb.KeyValueList{}}}},
 	}
-	for _, tc := range cases {
+}
+
+func TestOTLPJSONValues(t *testing.T) {
+	for _, tc := range otlpValues() {
 		t.Run(tc.name, func(t *testing.T) {
 			b, err := protojson.Marshal(tc.in)
 			if err != nil {
