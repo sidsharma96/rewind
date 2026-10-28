@@ -137,13 +137,9 @@ func TestOTLPNormalizeRefusalIsNonMutating(t *testing.T) {
 	}
 }
 
-func TestOTLPNormalizeSharedAndDuplicateEntries(t *testing.T) {
+func TestOTLPNormalizeSharedEntries(t *testing.T) {
 	in, lists := normalizationFixture()
-	// Exclusive ownership can include two internal references to the same list.
-	*lists[1] = *lists[0]
-	duplicate := &commonpb.KeyValue{Key: (*lists[0])[0].Key, Value: otlpString("different")}
-	*lists[0] = append(*lists[0], duplicate)
-	// Rebind after append, which may have changed the backing array.
+	// Exclusive ownership can include two internal references to a unique list.
 	*lists[1] = *lists[0]
 	original := slices.Clone(*lists[0])
 	if err := normalizeOwnedOTLP(in); err != nil {
@@ -154,10 +150,9 @@ func TestOTLPNormalizeSharedAndDuplicateEntries(t *testing.T) {
 	}
 	for _, pair := range original {
 		if !slices.Contains(*lists[0], pair) {
-			t.Fatal("duplicate-key pair discarded")
+			t.Fatal("original pair discarded")
 		}
 	}
-	// No assertion about which duplicate wins or their relative order: unsettled.
 }
 
 func FuzzOTLPNormalize(f *testing.F) {

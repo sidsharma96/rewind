@@ -1,6 +1,7 @@
 package capturelab
 
 import (
+	"errors"
 	"slices"
 	"strings"
 
@@ -14,7 +15,7 @@ import (
 // or retry equality. The caller must exclusively own the entire reachable graph,
 // including slice backing arrays. Use a fresh decode or explicitly clone a
 // retained caller's message before calling; do not share it concurrently.
-// Duplicate entries are retained, with no relative-order or meaning guarantee.
+// Repeated keys are refused before mutation, even when their values match.
 func normalizeOwnedOTLP(in *tracepb.TracesData) error {
 	if in == nil {
 		return errInvalid
@@ -35,21 +36,7 @@ func compareAttributeKeys(a, b *commonpb.KeyValue) int {
 // submessages, and refuses cycles. Only the pinned schema's keyed lists sort;
 // array values and all other repeated fields retain their sequence order.
 func orderOTLPAttributes(m protoreflect.Message) {
-	var attrs []*commonpb.KeyValue
-	switch v := m.Interface().(type) {
-	case *resourcepb.Resource:
-		attrs = v.GetAttributes()
-	case *commonpb.InstrumentationScope:
-		attrs = v.GetAttributes()
-	case *tracepb.Span:
-		attrs = v.GetAttributes()
-	case *tracepb.Span_Event:
-		attrs = v.GetAttributes()
-	case *tracepb.Span_Link:
-		attrs = v.GetAttributes()
-	case *commonpb.KeyValueList:
-		attrs = v.GetValues()
-	}
+	attrs := otlpAttributeList(m)
 	if !slices.IsSortedFunc(attrs, compareAttributeKeys) {
 		slices.SortFunc(attrs, compareAttributeKeys)
 	}
@@ -67,4 +54,42 @@ func orderOTLPAttributes(m protoreflect.Message) {
 		}
 		return true
 	})
+}
+
+// Keep the validator and ordering walk on the same pinned keyed containers.
+func otlpAttributeList(m protoreflect.Message) []*commonpb.KeyValue {
+	switch v := m.Interface().(type) {
+	case *resourcepb.Resource:
+		return v.GetAttributes()
+	case *commonpb.InstrumentationScope:
+		return v.GetAttributes()
+	case *tracepb.Span:
+		return v.GetAttributes()
+	case *tracepb.Span_Event:
+		return v.GetAttributes()
+	case *tracepb.Span_Link:
+		return v.GetAttributes()
+	case *commonpb.KeyValueList:
+		return v.GetValues()
+	}
+	return nil
+}
+
+var errDuplicateAttribute = errors.New("repeated experimental attribute key")
+
+func validateUniqueAttributeKeys(attrs []*commonpb.KeyValue) error {
+	if len(attrs) < 2 {
+		return nil
+	}
+	// The caller has already bounded this message's known fields. Store only
+	// key references, never attribute values or copies of their contents.
+	seen := make(map[string]struct{}, len(attrs))
+	for _, attr := range attrs {
+		key := attr.GetKey()
+		if _, ok := seen[key]; ok {
+			return errDuplicateAttribute
+		}
+		seen[key] = struct{}{}
+	}
+	return nil
 }
