@@ -75,8 +75,10 @@ a parallel handwritten metadata schema or Collector data model. The maintained l
 exercises that boundary before acceptance integration. The selected internal-record
 policy refuses unsupported metadata rather than discard it: unknown protobuf wire
 fields anywhere in the metadata must fail before JSON encoding. OTLP JSON transport
-compatibility remains a separate adapter responsibility. Full record schema,
-normalization, semantic validation and version/equality rules remain open.
+compatibility remains a separate adapter responsibility. Attribute ordering will normalize exclusively owned messages in place; caller-owned
+messages require an explicit copy first. The [ordering direction](CAPTURE.md#owned-attribute-ordering)
+preserves sequence order and keeps the encoder non-mutating. Full record schema,
+remaining normalization, semantic validation and version/equality rules remain open.
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
 supports this direction. Its header, fixture schema and limits are not frozen

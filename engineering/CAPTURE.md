@@ -5,9 +5,8 @@ OpenTelemetry-compatible internal record and a later OTLP adapter. No public cap
 schema, saved format, receiver or record normalizer is implemented. The selected
 span-metadata model reuses OpenTelemetry's generated Go types, including resource,
 scope and typed attributes. Rewind owns validation, normalization, exact capture
-bodies, ownership and the saved format. This selects neither a JSON serializer nor
-a complete record schema. The selected
-saved layout is versioned framing followed by JSON metadata and exact raw request
+bodies, ownership and the saved format. The narrow JSON adapter below is selected;
+a complete record schema remains open. The selected saved layout is versioned framing followed by JSON metadata and exact raw request
 and response bytes. Compression uses a size gate, then keeps gzip only if smaller;
 the selected starting threshold is configurable with a 32 KiB default for the
 complete hybrid record before compression or an outer encoding marker. The selected
@@ -43,8 +42,8 @@ status, typed attributes, events, links, flags, trace state, dropped-data counts
 resource context, instrumentation scope and their schema URLs. This is a list of
 compatibility concerns, not an approved Go struct or support claim. Specify which
 fields affect equality, supported value types, ordering/default rules and treatment
-of unsupported fields under the selected refusal policy before freezing a version. Equal span IDs in unrelated tenants
-must not share acceptance state.
+of unsupported fields under the selected refusal policy before freezing a version. Equal span IDs in unrelated tenants must not share
+acceptance state.
 
 Payloads are separate concepts from these metadata fields. Store exact captured
 request/response bytes only when available, and distinguish missing, redacted,
@@ -137,8 +136,7 @@ is different from OTLP JSON reception, whose standard requires ignoring unknown
 transport fields. A future adapter must document that projection and cannot claim
 the JSON saved record preserves every original transport field. No adapter or real
 record acceptance exists yet. The encoder returns the distinct lab error
-`errUnsupportedMetadata` for visited
-unknown wire metadata; public error mapping is not selected by that test helper.
+`errUnsupportedMetadata` for visited unknown wire metadata; public error mapping is not selected by that test helper.
 `otlp_unknown_test.go` checks 25 message positions, direct injection and a real
 binary-protobuf parse, default JSON refusal and unchanged input. The raw ProtoJSON
 loss check remains the simple negative oracle; it is not a permitted save path.
@@ -160,8 +158,7 @@ ProtoJSON cannot reinterpret unconverted hexadecimal text as Base64. Other accep
 ProtoJSON spellings/defaults do not define OTLP reception.
 OTLP JSON's transport rule to ignore unknown fields is separate from the policy
 that refuses unsupported fields still present in an internal record. Error/corruption
-must
-not turn into absence or equality. Revisit the narrow adapter if special cases grow
+must not turn into absence or equality. Revisit the narrow adapter if special cases grow
 or real profiling shows material overhead; changing the core model requires review.
 
 Pinned implementation references:
@@ -431,3 +428,46 @@ Before OTLP reception, design batch/partial-success/retry mapping separately:
 [OTLP acknowledgments](https://opentelemetry.io/docs/specs/otlp/) cover adjacent
 client/server nodes, not end-to-end delivery through collectors. Do not interpret
 a producer's successful export to an intermediary as Rewind's durable acceptance.
+
+## Owned attribute ordering
+
+The selected normalization direction sorts keyed attribute collections by their
+case-sensitive keys, including resource, scope, span, event and link attributes
+and nested key/value collections. Preserve array elements, events, links, spans
+and resource/scope group order. This is one normalization operation, not complete
+logical equality or a canonical byte encoding.
+
+A fresh decoded message can be normalized in place while Rewind exclusively owns
+its entire reachable object graph. An in-process caller retaining its message
+needs an explicit copy before that operation; a pointer alone does not transfer
+ownership. The existing encoder stays non-mutating. Do not remove the opaque
+Store's separate byte snapshot under this metadata decision.
+
+The test-only `normalizeOwnedOTLP` helper validates unknown fields and existing
+traversal bounds over the entire graph before any mutation, so refusal cannot
+leave a half-reordered message. A bounded second walk sorts only known keyed
+collections. This is not integrated with acceptance. It must preserve every key/value pair; duplicate
+key interpretation remains unresolved, and ordering duplicates cannot establish
+retry equality. Invalid semantic inputs remain outside the equivalence claim.
+
+The lab checks order with `slices.IsSortedFunc` before calling `slices.SortFunc`.
+Matched microbenchmarks cover direct sorting and check-then-sort on sorted,
+reversed, shuffled and nearly sorted lists, including long key prefixes. The check
+reduces fully sorted-list time in these samples but can slow nearly sorted lists;
+Go's direct sort is already adaptive. This is a provisional local choice, without
+a cache or retained state between independent submissions. For collections of sizes k_i, comparison work is
+at worst O(sum k_i log k_i), plus linear bounded traversal. String comparisons also
+read key bytes. In-place sorting avoids a full message clone but still uses stack
+space; it neither avoids decoding/encoding nor promises an allocation-free request.
+There are no object requests, transferred bytes, catalog locks or recovery effects
+in this lab operation. A failed later encoding publishes nothing. Revisit the
+sort strategy if measured final workloads or the Go implementation change.
+
+The independent insertion-sort oracle checks all keyed container paths and nested
+maps while preserving ordered sequences and original pair pointers/backing arrays.
+Tests cover explicit caller cloning, fresh decoder ownership, shared internal
+references and non-mutating refusal for unsupported fields, oversize and cycles.
+Fuzzed permutations must reach the same unique-key reference result. Duplicate
+pairs are retained, without a duplicate equality or winner policy. The maintained
+benchmarks compare restored identical inputs and report restoration separately;
+no disposable probes or comparison images are needed.
