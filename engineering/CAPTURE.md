@@ -4,8 +4,9 @@ Status: the user selected a small explicit Rewind capture path first, with an
 OpenTelemetry-compatible internal record and a later OTLP adapter. No public capture
 schema, saved format, receiver or record normalizer is implemented. The selected
 saved layout is versioned framing followed by JSON metadata and exact raw request
-and response bytes. Header details, complete metadata/body-state rules, limits and
-compression policy remain open. The current
+and response bytes. Compression uses a size gate, then keeps gzip only if smaller;
+the threshold and gzip setting remain open. Header details, complete metadata/body-state
+rules and limits also remain open. The current
 ingest coordinator receives opaque bytes and does not know OpenTelemetry types.
 An isolated [encoding experiment](CAPTURE-ENCODING.md) compares full JSON with
 JSON metadata and raw bodies, including compression. The user selected the hybrid

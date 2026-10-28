@@ -5,7 +5,9 @@ unchanged request/response bytes. This selects the representation direction, not
 the lab's header, limits or illustrative metadata as a frozen production format.
 No public codec, normalizer, endpoint or integration with ingest is introduced.
 OpenTelemetry field semantics, canonical equality and compatibility remain open.
-Compression policy is a separate decision; the gzip variants remain experiments.
+The selected compression policy has two gates: below a size threshold, store raw;
+at or above it, try gzip and keep it only if smaller. The threshold, gzip setting
+and production representation remain open; the gzip variants are still test-only.
 
 ## Question and baseline
 
@@ -118,10 +120,114 @@ binary or precompressed fixtures. For example, fresh default gzip state raises
 hybrid binary encode allocation to median 4,484,660 bytes, versus 1,122,925 without
 gzip. Allocations are not a retained-memory or peak-memory measurement.
 
-The user selected JSON metadata plus raw bodies from these results. Compression
-remains undecided. There is no claim about every gzip level, another
+The user selected JSON metadata plus raw bodies and the two-gate compression
+policy. Its threshold and gzip setting remain undecided. There is no claim about every gzip level, another
 compressor or a production distribution. A public format still needs all capture
 states, exact supported metadata semantics, normalization, framing compatibility
 and retries across encoder versions. In particular, gzip output is not covered by
 Go's byte-for-byte compatibility promise; hashing compressed bytes does not settle
 logical record equality across implementations or versions.
+
+## Threshold experiment design
+
+The user selected a size gate followed by a savings gate. Measure the size of the
+complete hybrid record before compression, not just one body. At an exact threshold
+the compressor runs. Keep raw on equal size as well as larger size; compression
+errors fail the experiment's operation rather than silently producing success.
+No attempt is made to modify an accepted object. A future raw/gzip representation
+must carry an explicit encoding marker and bound expanded reads independently of
+compressed size. It must not change defined logical record equality.
+
+Extend only the test lab. Test selector boundaries and both outcomes with controlled
+compressor callbacks, plus actual round trips with both gzip settings. The selector
+may borrow its input; the record encoder first owns a new hybrid buffer and returns
+only owned results. No pooling, retained caller buffers or goroutines. Codecs and
+selection are experimental helpers, not public APIs or ingest integration.
+
+Use fixed-seed synthetic repeated text, sixteen-word varied text, random binary and
+already-gzipped random binary, with the existing illustrative metadata. Make complete
+hybrid records exactly 4, 8, 16, 32, 48, 64, 128 and 256 KiB, plus one byte below and
+above each candidate threshold (8, 32 and 64 KiB). Request bodies take one fifth of
+the available body bytes; responses take the rest. Already-compressed bodies must
+be valid separate gzip streams, not truncated prefixes. Publish fixture generation
+rules and seed; this is not a production content or size distribution.
+
+Compare never, always, 8 KiB, 32 KiB and 64 KiB compression policies, with BestSpeed
+and DefaultCompression separately. Count the one-byte experimental encoding marker
+in all selected-object sizes, whether raw or gzip; this is accounting, not a frozen
+envelope format. Measure detailed compression encode/decode time and allocations
+at the power-of-two sizes (4, 8, 16, 32, 64, 128 and 256 KiB). Derive the threshold
+outcome for each case from its measured raw and compression-attempt paths, and
+check those derived outcomes against direct selector runs at all sizes. There is
+no weighted aggregate or production throughput claim. Do not time thousands of
+equivalent threshold paths just to count the same compression work repeatedly.
+
+Precompute only fixture values and decoder inputs outside timed loops; the raw
+hybrid encoding remains inside each encoder benchmark. Include rejected compression
+attempts in timing and allocations even though their stored result is raw. Use
+five samples, 100 ms targets, GOMAXPROCS=1; report median and range. Run correctness,
+race and fuzz work before timing, not concurrently with it. Reuse tested bounded
+gzip decoding. A short fuzz run on the original codecs does not prove the new
+policy, so boundary/fallback/error/ownership tests must exercise that policy itself.
+
+For R raw bytes, selection without compression is constant work after the O(R)
+hybrid encoding. A compression attempt adds work over R and holds raw and compressed
+buffers plus gzip state; keeping raw afterward does not recover that CPU or past
+allocation. Object request count is unchanged. Large incompressible records are
+the negative control: every qualifying attempt costs work and saves no bytes.
+The simplest alternatives remain never and always compress. Recommend a provisional
+threshold from the measured trade-offs; selecting a production default still needs
+its workload and budgets. Revisit with actual distributions, concurrent memory and
+latency budgets, or another compressor. No production threshold or gzip level is
+approved merely by this experiment.
+
+## Threshold observations
+
+The threshold lab ran with Go 1.27.2, darwin/arm64, Apple M1, 16 GiB memory,
+GOMAXPROCS=1, five 100 ms samples per case. The 56 exact-size fixtures produce
+504 directly checked policy outcomes. Timing covers 168 cases: 28 power-of-two
+fixtures, three baseline paths and two operations. Threshold choices map to those
+paths; no aggregate throughput or production size/content weighting is inferred.
+Reported selected sizes include one experimental marker byte on both paths.
+
+| Varied-text hybrid size before compression | Selected bytes, BestSpeed | Encode microseconds, median (range) | Encode allocated bytes |
+| --- | ---: | ---: | ---: |
+| 8 KiB | 2,129 | 62.780 (62.706–65.695) | 830,694 |
+| 32 KiB | 7,416 | 135.067 (132.931–136.708) | 863,463 |
+| 64 KiB | 14,395 | 237.942 (235.300–240.995) | 912,617 |
+
+Those paths include hybrid encoding and the compression attempt. Raw encoding at
+the same sizes took medians 1.579, 2.959 and 4.610 microseconds. At 32 KiB,
+DefaultCompression stored 6,066 bytes, taking 222.612 microseconds
+(221.891–225.061), with 1,125,614 allocated bytes versus BestSpeed's 863,463.
+Fresh gzip state is relatively expensive for small records. These allocation
+counts are not peak or retained memory, and no pooling was used.
+
+The negative control still pays. At 32 KiB, random binary kept 32,769 selected
+bytes on every policy. BestSpeed's attempted encode took 122.700 microseconds
+(122.341–123.539) and allocated 888,296 bytes, compared with raw's 2.916
+microseconds (2.900–2.970) and 33,344 bytes. Both random and already-gzipped binary
+kept raw at every tested size, even when compression ran. This says nothing about
+all binary formats or other metadata distributions.
+
+An 8 KiB threshold compresses the 8 and 16 KiB text fixtures; a 32 KiB threshold
+skips them, avoiding their compression attempts but giving up those savings. A
+64 KiB threshold also skips 32 and 48 KiB. At 64 KiB and above all three thresholds
+attempt the same work. Boundaries were checked at one byte below, exactly at and
+one byte above each threshold. Equal-size compressed results and operational
+compression failures were separately injected; an error is not a raw success.
+
+The provisional recommendation is 32 KiB with BestSpeed for a first implementation:
+avoid fresh gzip state on small records while testing substantial text savings
+above the gate. This is a tuning hypothesis, not a measured optimum or selected
+production default. An 8 KiB gate favors storage; 64 KiB favors skipping work.
+Real size/content frequency, concurrent memory and latency budgets can change the
+recommendation. Compression level trades CPU/allocation for further size savings.
+
+Before integration, settle how retries compare normalized content independently of
+stored bytes. The current opaque-byte coordinator uses one physical digest and
+requires an identical returned reference; it does not implement that distinction.
+A separate comparison digest in the catalog or reading/decompressing the accepted
+object on a changed-encoding retry are credible alternatives. No strategy, schema
+change or production codec is selected here. Tenant/trace/span/kind remains record
+identity; neither digest would replace it or authorize a caller.
