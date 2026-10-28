@@ -77,7 +77,9 @@ policy refuses unsupported metadata rather than discard it: unknown protobuf wir
 fields anywhere in the metadata must fail before JSON encoding. OTLP JSON transport
 compatibility remains a separate adapter responsibility. Attribute ordering will normalize exclusively owned messages in place; caller-owned
 messages require an explicit copy first. The [ordering direction](CAPTURE.md#owned-attribute-ordering)
-preserves sequence order and keeps the encoder non-mutating. Full record schema,
+preserves sequence order and keeps the encoder non-mutating. Repeated attribute
+keys, including identical values and nested map keys, are refused before sorting
+or encoding; separate collections may reuse keys. Full record schema,
 remaining normalization, semantic validation and version/equality rules remain open.
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)

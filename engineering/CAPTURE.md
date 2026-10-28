@@ -146,9 +146,10 @@ mixed-version input but loses evidence before retry comparison or replay can ins
 it. Opaque preservation would require an explicitly versioned representation and
 is not selected. A schema upgrade can explicitly add supported fields later; it
 must revisit this check and the saved-format compatibility rules. The recursive
-check uses the existing bounded walk: O(visited known fields and values) time,
-O(depth) stack, constant work to check the length of each message's unknown byte
-slice, no copying or parsing that slice and no object/catalog operation. Parent-only
+unknown-field portion uses the existing bounded walk: one visit per known field
+and value, O(depth) stack, and constant work to check the length of each message's
+unknown byte slice. It neither copies nor parses that slice and does no object or
+catalog operation. The uniqueness check below adds its own time and memory costs. Parent-only
 checking misses nested loss; clearing unknown bytes would violate the policy.
 
 Exact accepted field names, semantic validation, normalization and saved-version
@@ -446,9 +447,26 @@ Store's separate byte snapshot under this metadata decision.
 The test-only `normalizeOwnedOTLP` helper validates unknown fields and existing
 traversal bounds over the entire graph before any mutation, so refusal cannot
 leave a half-reordered message. A bounded second walk sorts only known keyed
-collections. This is not integrated with acceptance. It must preserve every key/value pair; duplicate
-key interpretation remains unresolved, and ordering duplicates cannot establish
-retry equality. Invalid semantic inputs remain outside the equivalence claim.
+collections. This is not integrated with acceptance. Repeated keys within one
+collection must be refused, including identical values, before any reordering or
+JSON encoding. This covers the same six keyed container types and nested maps;
+reusing a key in a different collection is allowed. Case-distinct keys remain
+distinct. The encoder must share this guard so callers cannot bypass it by skipping
+normalization. Parsing alone need not establish semantic validity.
+
+The lab check reuses the bounded read-only traversal. After a message's known
+fields pass the existing budget/depth check, inspect its keyed collection with a
+local Go set (`map[string]struct{}`). A repeated key returns a distinct lab error,
+without including keys or values in the error text. No value comparison, winner
+rule or silent repair is needed. Strings are referenced, not copied. The set is
+local to one collection/check, with O(k) auxiliary entries and expected O(k) lookups
+plus key hashing. Go does not guarantee constant-time map operations; hashing can
+degenerate, so the overall validator must not inherit the sort's worst-case bound.
+A simple pairwise scan is the exact test oracle (O(k²), constant auxiliary space).
+Copying just key headers and sorting them is a deterministic O(k log k) alternative
+if bounded worst-case CPU becomes a requirement. Measure the selected checker on
+bounded fixtures; no caching, pooling or full metadata cloning is introduced.
+Other invalid semantic inputs remain outside the equivalence claim.
 
 The lab checks order with `slices.IsSortedFunc` before calling `slices.SortFunc`.
 Matched microbenchmarks cover direct sorting and check-then-sort on sorted,
@@ -456,7 +474,8 @@ reversed, shuffled and nearly sorted lists, including long key prefixes. The che
 reduces fully sorted-list time in these samples but can slow nearly sorted lists;
 Go's direct sort is already adaptive. This is a provisional local choice, without
 a cache or retained state between independent submissions. For collections of sizes k_i, comparison work is
-at worst O(sum k_i log k_i), plus linear bounded traversal. String comparisons also
+at worst O(sum k_i log k_i) for ordering alone, plus traversal and the
+separately described uniqueness check. String comparisons also
 read key bytes. In-place sorting avoids a full message clone but still uses stack
 space; it neither avoids decoding/encoding nor promises an allocation-free request.
 There are no object requests, transferred bytes, catalog locks or recovery effects
@@ -468,6 +487,8 @@ maps while preserving ordered sequences and original pair pointers/backing array
 Tests cover explicit caller cloning, fresh decoder ownership, shared internal
 references and non-mutating refusal for unsupported fields, oversize and cycles.
 Fuzzed permutations must reach the same unique-key reference result. Duplicate
-pairs are retained, without a duplicate equality or winner policy. The maintained
+refusal must leave the entire graph unchanged, including unrelated collections,
+and return no encoder output; check identical/different typed values, adjacent
+and separated repeats, and all keyed container paths against the pairwise oracle. The maintained
 benchmarks compare restored identical inputs and report restoration separately;
 no disposable probes or comparison images are needed.

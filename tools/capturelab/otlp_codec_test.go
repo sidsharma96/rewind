@@ -104,7 +104,12 @@ func validateOTLPMessage(m protoreflect.Message, depth int, budget *int) error {
 		err = visit(v)
 		return err == nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	// Bound the complete subtree before allocating its temporary key set.
+	// Both encoder and normalizer use this read-only guard.
+	return validateUniqueAttributeKeys(otlpAttributeList(m))
 }
 
 // Check duplicate keys before decoding objects into maps, which would otherwise
