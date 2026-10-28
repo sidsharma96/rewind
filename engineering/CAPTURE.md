@@ -23,9 +23,14 @@ OTLP export -----------> translate --+
 The second entrance is future work. Authentication supplies trusted tenant context;
 neither a span's attributes nor its trace ID grants storage authority. Each entrance
 must bound encoded and decoded input before passing owned record bytes to ingest.
-The accepted record must have a defined deterministic encoding before its digest
-can implement the agreed metadata-value and exact-payload equality rule. Do not
-hash raw transport JSON or assume arbitrary protobuf serialization is canonical.
+The accepted record needs defined metadata normalization and exact-payload equality
+independent of compression. Keep the stored-object digest for integrity and the
+identical-bytes retry path. For different stored bytes under an existing identity,
+the selected direction is to decode the accepted object and compare defined
+contents; do not add a second logical-content digest. See the
+[comparison design](CAPTURE-ENCODING.md#retry-comparison-direction) for authorization,
+final rechecks and failure boundaries. This is not implemented. Do not compare raw
+transport JSON or assume arbitrary protobuf serialization is canonical.
 
 The record design must account for trace/span/parent identity, timestamps, kind,
 status, typed attributes, events, links, flags, trace state, dropped-data counts,

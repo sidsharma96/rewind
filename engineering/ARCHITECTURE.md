@@ -46,6 +46,16 @@ exactly; do not silently rewrite them. The concrete field schema, identity encod
 deterministic record encoding, correction mechanism and duplicate response shape
 still need design. These are agreed contracts, not implemented behavior.
 
+Keep one stored-object digest in the catalog. For an authorized same-identity
+retry whose stored bytes differ, the selected direction is to verify and decode
+the accepted object and compare defined contents, rather than persist a second
+logical-content digest. Identical stored bytes take the quick path. Comparison
+I/O must stay outside catalog locks; final resolution rechecks current authority,
+expiry and the compared reference. Writer-scoped comparison must not require or
+confer project-reader access. The [comparison design](CAPTURE-ENCODING.md#retry-comparison-direction)
+records the trade-off and failure boundaries. It is not implemented by the opaque
+coordinator or native catalog yet.
+
 ## Capture and OpenTelemetry
 
 Build a small explicit Rewind capture path first, with an internal record designed
