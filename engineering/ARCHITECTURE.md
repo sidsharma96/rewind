@@ -71,7 +71,9 @@ production contracts. The selected compression policy skips records below a size
 threshold and otherwise keeps gzip only if smaller. Its selected starting default
 is a configurable 32 KiB for the complete uncompressed hybrid record, including
 metadata and framing but excluding any outer encoding marker; equality with the
-threshold attempts compression. The gzip setting remains open. No production codec,
+threshold attempts compression. Use configurable gzip BestSpeed as the starting
+setting, favoring lower compression CPU and allocation over the extra size savings of
+DefaultCompression. No production codec,
 runtime compression configuration or normalizer exists yet.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
