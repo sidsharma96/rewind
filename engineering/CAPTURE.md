@@ -3,6 +3,10 @@
 Status: the user selected a small explicit Rewind capture path first, with an
 OpenTelemetry-compatible internal record and a later OTLP adapter. No public capture
 schema, saved format, receiver or record normalizer is implemented. The selected
+span-metadata model reuses OpenTelemetry's generated Go types, including resource,
+scope and typed attributes. Rewind owns validation, normalization, exact capture
+bodies, ownership and the saved format. This selects neither a JSON serializer nor
+a complete record schema. The selected
 saved layout is versioned framing followed by JSON metadata and exact raw request
 and response bytes. Compression uses a size gate, then keeps gzip only if smaller;
 the selected starting threshold is configurable with a 32 KiB default for the
@@ -47,6 +51,43 @@ request/response bytes only when available, and distinguish missing, redacted,
 truncated and present data, including a present zero-byte body. Those states do not
 by themselves establish that a particular replay adapter has all required inputs.
 Do not manufacture a body by serializing attributes and call it the original bytes.
+
+## Generated metadata and JSON
+
+Use `go.opentelemetry.io/proto/otlp` v1.9.0 for the selected generated types. Its
+source repository's protocol submodule is exactly the existing reference commit
+below. Use protobuf v1.36.12, a compatible patch in the runtime family required by
+that module; both require Go 1.23 or later. This pin is a reproducible starting
+point, not a claim of compatibility with every newer protocol field. Generated
+messages are mutable: accepted records will need validation and owned snapshots.
+
+The test-only JSON check in `tools/capturelab/otlp_json_test.go` uses fixed synthetic
+generated messages, without adding an application API or changing the earlier
+toy-type size/timing fixtures. It exercises resource,
+scope and span with both schema URLs, typed attributes, events, links, flags,
+status, counts and exact integer timestamps. It compares decoded messages with their
+originals for structural round-trip fidelity, not as a chosen logical retry rule.
+It checks integer 12 versus text "12", the pinned AnyValue alternatives including
+empty, large signed integers and metadata bytes. Captured bodies remain separate.
+
+The protocol-aware `protojson` candidate round-trips the tested known fields and
+types; ordinary `encoding/json` fails to decode the generated oneof value types.
+The check inspects integer and ID representations and independent buffer/message
+ownership. ProtoJSON emits large integers as decimal strings, IDs as Base64 and
+enums as names by default. Its JSON round trip loses the injected unknown protobuf
+wire field at both the root and a nested attribute, while preserving known fields.
+Default ProtoJSON decoding refuses an unknown JSON field but accepts an empty Span
+without IDs. These are observed limitations, not selected reject/drop or validation
+policies. Successful conversion cannot replace acceptance validation. Fixed
+in-memory fixtures are not a bounded network decoder or an OTLP receiver. No
+performance or remote-durability claim follows.
+
+The JSON serializer, its options, field validation, normalization and version policy
+remain open. Generated structs avoid duplicate protocol field definitions, but
+still need a deliberate saved-JSON boundary. ProtoJSON and OTLP's transport JSON
+have different ID conventions; adopting a saved serializer does not implement an
+OTLP endpoint. A handwritten mapping is the credible alternative: it controls JSON
+shape at the cost of maintained conversion code and compatibility tests.
 
 ## Compatibility references and required checks
 
