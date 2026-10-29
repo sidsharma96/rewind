@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 func TestRunAdmissionTransitionsAndDeadline(t *testing.T) {
@@ -111,7 +113,7 @@ func TestRunRegistrationLostReplyResolvesDuringDrain(t *testing.T) {
 	w := testDeliveryWindow(t)
 	key := runKey{sampleID.Tenant, sampleOwner.Run}
 	e := sampleExecution
-	e.Span = "registered-before-completion"
+	e.Span = traceid.Span{103}
 	setCreator(c, e, sampleOwner, "trusted-host-1", true)
 	setCreator(c, e, sampleOwner, "trusted-host-2", true)
 	first := newRegistrar(t, trustedRegistrar("trusted-host-1"), c, 1)
@@ -174,7 +176,7 @@ func TestRunCompletedRefusesNewOrChangedRegistrations(t *testing.T) {
 		otherRun := Owner{Run: "another-running-run", Instance: sampleOwner.Instance}
 		c.runs[runKey{sampleID.Tenant, otherRun.Run}] = NewRunAdmission()
 		newCall := sampleExecution
-		newCall.Span = "new-after-completion"
+		newCall.Span = traceid.Span{102}
 		cases := []struct {
 			e Execution
 			o Owner
@@ -210,7 +212,7 @@ func TestRunTransitionBetweenAuthorizationAndRegistration(t *testing.T) {
 				key := runKey{sampleID.Tenant, sampleOwner.Run}
 				e := sampleExecution
 				if !identical {
-					e.Span = "in-flight-registration"
+					e.Span = traceid.Span{101}
 				}
 				setCreator(c, e, sampleOwner, "trusted-host-1", true)
 				if transition == "deadline" {
@@ -328,7 +330,7 @@ func TestRunCompletionStopsNewCallsButDrainsExistingCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	newCall := sampleExecution
-	newCall.Span = "call-after-completion"
+	newCall.Span = traceid.Span{100}
 	setCreator(c, newCall, sampleOwner, "trusted-host-1", true)
 	r := newRegistrar(t, trustedRegistrar("trusted-host-1"), c, 1)
 	if _, err := r.Register(t.Context(), newCall, sampleOwner); !errors.Is(err, ErrDenied) || errors.Is(err, ErrRegistrationUncertain) {
@@ -387,7 +389,7 @@ func TestRunRegistrationConfirmedBeforeRevocationStaysSuccessful(t *testing.T) {
 	_, _, c := fixture(t)
 	key := runKey{sampleID.Tenant, sampleOwner.Run}
 	e := sampleExecution
-	e.Span = "registered-just-before-revocation"
+	e.Span = traceid.Span{104}
 	setCreator(c, e, sampleOwner, "trusted-host-1", true)
 	c.afterRegistration = func(context.Context) error { return revokeModelRun(c, key) }
 	r := newRegistrar(t, trustedRegistrar("trusted-host-1"), c, 1)

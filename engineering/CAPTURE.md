@@ -386,9 +386,27 @@ provides a connection-authentication boundary, not Rewind execution ownership.
 `Registrar.Register` in `internal/ingest/registration.go` establishes one immutable
 binding through controlled capabilities. `Execution` contains tenant/trace/span;
 `Owner` contains run/instance. Leaving kind out of the binding gives span and capture
-one owner. These are bounded opaque internal IDs, not a selected public
-wire encoding. `Tenant` supplies the project's scope for this experiment, not a new
+one owner. The selected identity representation is a 16-byte trace ID and an
+8-byte span ID, each nonzero, matching OpenTelemetry. `internal/traceid`
+provides comparable array values, strict hex parsing and checked copying from
+generated messages' byte slices. Hex case denotes the same bytes. Parsing must
+reject wrong lengths, malformed hex and all-zero IDs before authorization or
+catalog access; array zero values must also fail at those boundaries. Parent IDs
+are not execution keys and their optional semantics need separate validation.
+Project, run, instance and principal IDs remain bounded opaque strings.
+This does not freeze a public request or saved-record format. `Tenant` supplies
+the project's scope for this experiment, not a new
 organization/project hierarchy.
+
+Use fixed arrays rather than carrying canonicalized hex strings internally:
+an execution remains a comparable map key without retaining a mutable byte slice
+or allocating hex for each SQL request. Passing PostgreSQL the array's bytes
+preserves its existing `bytea` representation. The installer constrains new
+schemas to exact nonzero trace/span widths. It still refuses existing schemas;
+there is no automatic migration or reinterpretation of earlier symbolic IDs.
+Fixed-width parsing, validity checks, copies and formatting have constant cost
+and bounded output; they perform no object or catalog I/O. This change does not
+validate metadata contents, prove ownership or implement an OTLP receiver.
 
 After validation and bounded admission, the registration authorizer must approve
 this exact execution/owner for a trusted creator and return its authenticated

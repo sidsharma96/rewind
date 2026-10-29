@@ -93,6 +93,29 @@ Sources: [R2 S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
 The same read/create/read sequence exists in Concordance's object adapter; no code
 is extracted until both applications have exercised their own recovery contract.
 
+### Extraction checkpoint
+
+The comparison against Concordance revision
+`051ad3858f18f50b03362933b6c9efbc2edbe398`, `internal/objectstore/store.go`
+(`EnsureVerified`, `Read`), finds the same strict GET/conditional-PUT/GET baseline.
+This is a source comparison, not a new joint recovery test or approval to extract.
+
+| Boundary | Rewind | Concordance |
+| --- | --- | --- |
+| Authorized namespace | Per-call opaque tenant bytes | Store-bound globally qualified UTF-8 collection |
+| Read length | Upper bound; Store checks exact catalog size | Reference carries exact size, checked by adapter |
+| Admission and timeout | Adapter bounds active calls and elapsed time | Caller owns admission and supplies a deadline |
+| Publication | Record catalog must accept identity/owner/reference | Catalog publishes an entire generation |
+| Recovery evidence | Fresh object client observed; combined catalog recovery missing | Fresh object client observed; complete generation recovery experiment still open |
+
+Concordance also has verification receipts and a reuse component above its strict
+object path. Those do not establish Rewind's authorization, retention or acceptance
+and are not approved for shared extraction. The next comparison must start with
+each application's committed catalog reference after replacing its writer, resolve
+an ambiguous object write and catalog commit, and count requests/transferred bytes.
+Keep the different scope, length and admission contracts explicit before choosing
+a library API. Neither adapter currently supplies range reads or safe deletion.
+
 ## Opt-in development-bucket probe
 
 `TestR2LiveImmutableObjects` only targets `rewind-dev`. Supply

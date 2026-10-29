@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sidsharma96/rewind/internal/ingest"
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 type fixture struct {
@@ -59,7 +60,7 @@ func database(t *testing.T) fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return fixture{c, pool, ingest.Registration{Execution: ingest.Execution{Tenant: "project", Trace: "trace", Span: "42"}, Owner: ingest.Owner{Run: "run", Instance: "alice"}, RegisteredBy: "host-one"}}
+	return fixture{c, pool, ingest.Registration{Execution: ingest.Execution{Tenant: "project", Trace: traceid.Trace{1}, Span: traceid.Span{42}}, Owner: ingest.Owner{Run: "run", Instance: "alice"}, RegisteredBy: "host-one"}}
 }
 func (f fixture) seed(t *testing.T, r ingest.Registration) {
 	t.Helper()
@@ -78,7 +79,7 @@ func (f fixture) seed(t *testing.T, r ingest.Registration) {
 	if _, err = tx.Exec(ctx, "INSERT INTO "+f.c.table("runs")+"(project,run_id,phase) VALUES($1,$2,'running') ON CONFLICT DO NOTHING", []byte(r.Execution.Tenant), []byte(r.Owner.Run)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = tx.Exec(ctx, "INSERT INTO "+f.c.table("creator_grants")+" VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING", []byte(r.Execution.Tenant), []byte(r.Execution.Trace), []byte(r.Execution.Span), []byte(r.Owner.Run), []byte(r.Owner.Instance), []byte(r.RegisteredBy)); err != nil {
+	if _, err = tx.Exec(ctx, "INSERT INTO "+f.c.table("creator_grants")+" VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING", []byte(r.Execution.Tenant), r.Execution.Trace[:], r.Execution.Span[:], []byte(r.Owner.Run), []byte(r.Owner.Instance), []byte(r.RegisteredBy)); err != nil {
 		t.Fatal(err)
 	}
 	if err = tx.Commit(ctx); err != nil {
@@ -213,7 +214,7 @@ func TestRunDrainAndPersistedClosure(t *testing.T) {
 		t.Fatalf("open drain retry: %+v %v %v", got, dup, err)
 	}
 	newCall := f.r
-	newCall.Execution.Span = "new-after-completion"
+	newCall.Execution.Span = traceid.Span{102}
 	f.seed(t, newCall)
 	if _, _, err := f.c.RegisterOwnership(t.Context(), newCall); !errors.Is(err, ingest.ErrDenied) {
 		t.Fatalf("new drain binding = %v", err)
@@ -245,11 +246,11 @@ func TestRunDrainAndPersistedClosure(t *testing.T) {
 		t.Fatalf("restored closure reopened at earlier time: %v", err)
 	}
 }
-func TestOpaqueBinaryIdentityAndInputBounds(t *testing.T) {
+func TestOpaqueBinaryScopeAndAttribution(t *testing.T) {
 	f := database(t)
 	r := f.r
 	blob := "\x00\xff" + strings.Repeat("x", 254)
-	r.Execution = ingest.Execution{Tenant: blob, Trace: blob, Span: blob}
+	r.Execution = ingest.Execution{Tenant: blob, Trace: traceid.Trace{0, 0xff, 0x80, 16}, Span: traceid.Span{0, 0xff, 0x80, 8}}
 	r.Owner = ingest.Owner{Run: blob, Instance: blob}
 	r.RegisteredBy = blob
 	f.seed(t, r)
@@ -257,13 +258,7 @@ func TestOpaqueBinaryIdentityAndInputBounds(t *testing.T) {
 	if err != nil || dup || got != r {
 		t.Fatalf("opaque bytes were not preserved: %v", err)
 	}
-	for _, span := range []string{"", strings.Repeat("x", 257)} {
-		bad := r
-		bad.Execution.Span = span
-		if _, _, err := f.c.RegisterOwnership(t.Context(), bad); !errors.Is(err, ingest.ErrInvalid) {
-			t.Fatal("unbounded input accepted")
-		}
-	}
+
 	unknown := r
 	unknown.Execution.Tenant = "unknown"
 	if _, _, err := f.c.RegisterOwnership(t.Context(), unknown); !errors.Is(err, ingest.ErrDenied) {
@@ -283,7 +278,7 @@ func TestConcurrentFirstRegistrationAndDifferentCall(t *testing.T) {
 			second.RegisteredBy = "host-two"
 			f.seed(t, second)
 			another := second
-			another.Execution.Span = "99"
+			another.Execution.Span = traceid.Span{101}
 			f.seed(t, another)
 			tx, err := f.pool.Begin(t.Context())
 			if err != nil {
@@ -293,7 +288,7 @@ func TestConcurrentFirstRegistrationAndDifferentCall(t *testing.T) {
 			if err = f.c.gate(t.Context(), tx, f.r.Execution.Tenant, "SHARE"); err != nil {
 				t.Fatal(err)
 			}
-			_, err = tx.Exec(t.Context(), "INSERT INTO "+f.c.table("bindings")+" VALUES($1,$2,$3,$4,$5,$6)", []byte(f.r.Execution.Tenant), []byte(f.r.Execution.Trace), []byte(f.r.Execution.Span), []byte(f.r.Owner.Run), []byte(f.r.Owner.Instance), []byte(f.r.RegisteredBy))
+			_, err = tx.Exec(t.Context(), "INSERT INTO "+f.c.table("bindings")+" VALUES($1,$2,$3,$4,$5,$6)", []byte(f.r.Execution.Tenant), f.r.Execution.Trace[:], f.r.Execution.Span[:], []byte(f.r.Owner.Run), []byte(f.r.Owner.Instance), []byte(f.r.RegisteredBy))
 			if err != nil {
 				t.Fatal(err)
 			}

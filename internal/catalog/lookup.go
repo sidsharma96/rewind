@@ -11,7 +11,7 @@ import (
 
 func validID(s string) bool { return len(s) > 0 && len(s) <= 256 }
 func recordKind(id ingest.Identity) (string, error) {
-	if !validID(id.Tenant) || !validID(id.Trace) || !validID(id.Span) {
+	if !validID(id.Tenant) || !id.Trace.Valid() || !id.Span.Valid() {
 		return "", ingest.ErrInvalid
 	}
 	switch id.Kind {
@@ -92,7 +92,7 @@ func (c *Catalog) lookupLocked(ctx context.Context, tx pgx.Tx, id ingest.Identit
 	if exclusive {
 		mode = "UPDATE"
 	}
-	args := []any{[]byte(id.Tenant), []byte(id.Trace), []byte(id.Span)}
+	args := []any{[]byte(id.Tenant), id.Trace[:], id.Span[:]}
 	var run, instance []byte
 	err = tx.QueryRow(ctx, "SELECT run_id,instance_id FROM "+c.table("bindings")+" WHERE project=$1 AND trace_id=$2 AND span_id=$3 FOR "+mode, args...).Scan(&run, &instance)
 	if errors.Is(err, pgx.ErrNoRows) {

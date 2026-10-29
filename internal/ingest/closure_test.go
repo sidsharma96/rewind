@@ -4,6 +4,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 func TestRunElapsedClosureSurvivesEarlierClock(t *testing.T) {
@@ -108,7 +110,7 @@ func TestSavedRunClosureRefusesFreshCoordinatorsAfterClockCorrection(t *testing.
 				}
 			}
 			another := id
-			another.Span = "another-call"
+			another.Span = traceid.Span{100}
 			if _, err := fresh.Write(t.Context(), another, contents); !errors.Is(err, ErrDenied) {
 				t.Fatalf("unregistered write: %v", err)
 			}

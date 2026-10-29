@@ -24,8 +24,8 @@ CREATE TABLE runs (
 );
 CREATE TABLE creator_grants (
     project bytea NOT NULL,
-    trace_id bytea NOT NULL CHECK (octet_length(trace_id) BETWEEN 1 AND 256),
-    span_id bytea NOT NULL CHECK (octet_length(span_id) BETWEEN 1 AND 256),
+    trace_id bytea NOT NULL CHECK (octet_length(trace_id) = 16 AND trace_id <> decode(repeat('00', 16), 'hex')),
+    span_id bytea NOT NULL CHECK (octet_length(span_id) = 8 AND span_id <> decode(repeat('00', 8), 'hex')),
     run_id bytea NOT NULL,
     instance_id bytea NOT NULL CHECK (octet_length(instance_id) BETWEEN 1 AND 256),
     principal_id bytea NOT NULL CHECK (octet_length(principal_id) BETWEEN 1 AND 256),
@@ -34,8 +34,8 @@ CREATE TABLE creator_grants (
 );
 CREATE TABLE bindings (
     project bytea NOT NULL,
-    trace_id bytea NOT NULL CHECK (octet_length(trace_id) BETWEEN 1 AND 256),
-    span_id bytea NOT NULL CHECK (octet_length(span_id) BETWEEN 1 AND 256),
+    trace_id bytea NOT NULL CHECK (octet_length(trace_id) = 16 AND trace_id <> decode(repeat('00', 16), 'hex')),
+    span_id bytea NOT NULL CHECK (octet_length(span_id) = 8 AND span_id <> decode(repeat('00', 8), 'hex')),
     run_id bytea NOT NULL,
     instance_id bytea NOT NULL CHECK (octet_length(instance_id) BETWEEN 1 AND 256),
     registered_by bytea NOT NULL CHECK (octet_length(registered_by) BETWEEN 1 AND 256),

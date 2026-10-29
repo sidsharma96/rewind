@@ -7,10 +7,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 var (
-	sampleExecution = Execution{Tenant: "tenant-a", Trace: "trace-1", Span: "span-42"}
+	sampleExecution = Execution{Tenant: "tenant-a", Trace: traceid.Trace{1}, Span: traceid.Span{42}}
 	sampleOwner     = Owner{Run: "run-17", Instance: "planner-7"}
 )
 
@@ -297,8 +299,8 @@ func TestRegistrationCancellationAtCatalogBoundary(t *testing.T) {
 func TestRegistrationRejectsInvalidCatalogResult(t *testing.T) {
 	for _, change := range []func(Registration) Registration{
 		func(r Registration) Registration { r.Execution.Tenant = "other"; return r },
-		func(r Registration) Registration { r.Execution.Trace = "other"; return r },
-		func(r Registration) Registration { r.Execution.Span = "other"; return r },
+		func(r Registration) Registration { r.Execution.Trace = traceid.Trace{100}; return r },
+		func(r Registration) Registration { r.Execution.Span = traceid.Span{100}; return r },
 		func(r Registration) Registration { r.Owner.Run = "other"; return r },
 		func(r Registration) Registration { r.Owner.Instance = "other"; return r },
 		func(r Registration) Registration { r.RegisteredBy = ""; return r },
@@ -323,14 +325,22 @@ func TestRegistrationBoundsBeforeCapabilities(t *testing.T) {
 		authCalls++
 		return "trusted-host-1", ctx.Err()
 	})
-	for part := range 5 {
+	for part := range 3 {
 		for _, bad := range []string{"", strings.Repeat("x", maxIdentityBytes+1)} {
 			e, o := sampleExecution, sampleOwner
-			fields := []*string{&e.Tenant, &e.Trace, &e.Span, &o.Run, &o.Instance}
+			fields := []*string{&e.Tenant, &o.Run, &o.Instance}
 			*fields[part] = bad
 			if _, err := r.Register(t.Context(), e, o); !errors.Is(err, ErrInvalid) {
 				t.Fatalf("invalid registration=%v", err)
 			}
+		}
+	}
+	for _, e := range []Execution{
+		{Tenant: sampleExecution.Tenant, Span: sampleExecution.Span},
+		{Tenant: sampleExecution.Tenant, Trace: sampleExecution.Trace},
+	} {
+		if _, err := r.Register(t.Context(), e, sampleOwner); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("zero binary ID=%v", err)
 		}
 	}
 	ctx, cancel := context.WithCancel(t.Context())
@@ -380,8 +390,18 @@ func TestRegistrationAuthorizesExactExecutionAndOwner(t *testing.T) {
 	r := newRegistrar(t, auth, c, 1)
 	for field := range 5 {
 		e, o := sampleExecution, sampleOwner
-		parts := []*string{&e.Tenant, &e.Trace, &e.Span, &o.Run, &o.Instance}
-		*parts[field] = "outside-grant"
+		switch field {
+		case 0:
+			e.Tenant = "outside-grant"
+		case 1:
+			e.Trace[15]++
+		case 2:
+			e.Span[7]++
+		case 3:
+			o.Run = "outside-grant"
+		case 4:
+			o.Instance = "outside-grant"
+		}
 		if _, err := r.Register(t.Context(), e, o); !errors.Is(err, denied) || c.calls.Load() != 0 {
 			t.Fatalf("request outside grant reached catalog=%v", err)
 		}

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/sidsharma96/rewind/internal/ingest"
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 // Trusted fixture setup, not record acceptance or a producer-facing grant API.
@@ -36,7 +37,7 @@ func (f fixture) seedRecord(t *testing.T, kind ingest.Kind, expired bool, past b
 	if _, err = tx.Exec(t.Context(), "INSERT INTO "+f.c.table("reader_grants")+" VALUES($1,$2) ON CONFLICT DO NOTHING", []byte(id.Tenant), []byte("reader")); err != nil {
 		t.Fatal(err)
 	}
-	_, err = tx.Exec(t.Context(), "INSERT INTO "+f.c.table("records")+" VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", []byte(id.Tenant), []byte(id.Trace), []byte(id.Span), name, digest[:], receipt.Reference.Size, []byte(f.r.Owner.Run), []byte(f.r.Owner.Instance), []byte(receipt.Attribution.SubmittedBy), at, expires, expires.Add(24*time.Hour), expired)
+	_, err = tx.Exec(t.Context(), "INSERT INTO "+f.c.table("records")+" VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)", []byte(id.Tenant), id.Trace[:], id.Span[:], name, digest[:], receipt.Reference.Size, []byte(f.r.Owner.Run), []byte(f.r.Owner.Instance), []byte(receipt.Attribution.SubmittedBy), at, expires, expires.Add(24*time.Hour), expired)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +74,7 @@ func TestLookupOriginalReceiptAndFreshPool(t *testing.T) {
 	}
 	requireLookup(t, c, original.Reference.Identity, original, nil)
 	missing := original.Reference.Identity
-	missing.Span = "unknown"
+	missing.Span = traceid.Span{101}
 	requireLookup(t, c, missing, ingest.Receipt{}, ingest.ErrNotFound)
 	// Registration/ownership alone does not authorize reading, including absence.
 	if _, err = c.Lookup(t.Context(), missing, f.r.RegisteredBy); !errors.Is(err, ingest.ErrDenied) {
@@ -302,8 +303,8 @@ func TestLookupRejectsInvalidInputBeforeDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	valid := ingest.Identity{Tenant: "project", Trace: "trace", Span: "span"}
-	for _, id := range []ingest.Identity{{}, {Tenant: "project", Trace: "trace", Span: "span", Kind: ingest.Kind(9)}} {
+	valid := ingest.Identity{Tenant: "project", Trace: traceid.Trace{1}, Span: traceid.Span{42}}
+	for _, id := range []ingest.Identity{{}, {Tenant: "project", Trace: traceid.Trace{1}, Span: traceid.Span{42}, Kind: ingest.Kind(9)}} {
 		if _, err = c.Lookup(t.Context(), id, "reader"); !errors.Is(err, ingest.ErrInvalid) {
 			t.Fatal("invalid lookup identity accepted")
 		}

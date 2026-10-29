@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 // Controlled request identity, not a token verifier. Nil operations are denied.
@@ -80,7 +82,7 @@ func TestRecordOwnershipRejectsOtherInstancesBeforeUpload(t *testing.T) {
 func TestRecordRequiresRegistrationAndMatchingProject(t *testing.T) {
 	s, o, c := fixture(t)
 	for _, id := range []Identity{
-		{Tenant: sampleID.Tenant, Trace: sampleID.Trace, Span: "unregistered"},
+		{Tenant: sampleID.Tenant, Trace: sampleID.Trace, Span: traceid.Span{101}},
 		{Tenant: "other-project", Trace: sampleID.Trace, Span: sampleID.Span},
 	} {
 		setWriter(c, id.Tenant, Attribution{sampleOwner, "principal-a"}, true)
@@ -98,7 +100,7 @@ func TestProjectReaderCanInspectAgentsButWriterCannotRead(t *testing.T) {
 	alice := Attribution{sampleOwner, "principal-a"}
 	bob := Attribution{Owner{Run: sampleOwner.Run, Instance: "bob-1"}, "principal-b"}
 	bobID := sampleID
-	bobID.Span = "bobs-call"
+	bobID.Span = traceid.Span{100}
 	provision(t, c, bobID, bob)
 	for _, tc := range []struct {
 		id Identity

@@ -141,9 +141,11 @@ func rollback(tx pgx.Tx) error {
 	return err
 }
 func validRegistration(r ingest.Registration) bool {
-	// These bounds also define this schema's identifier representation. Do not
-	// normalize strings: Go's opaque identity bytes need not be valid UTF-8.
-	for _, s := range []string{r.Execution.Tenant, r.Execution.Trace, r.Execution.Span, r.Owner.Run, r.Owner.Instance, r.RegisteredBy} {
+	if !r.Execution.Trace.Valid() || !r.Execution.Span.Valid() {
+		return false
+	}
+	// The remaining opaque identity bytes need not be valid UTF-8.
+	for _, s := range []string{r.Execution.Tenant, r.Owner.Run, r.Owner.Instance, r.RegisteredBy} {
 		if s == "" || len(s) > 256 {
 			return false
 		}
@@ -271,7 +273,7 @@ func (c *Catalog) register(ctx context.Context, tx pgx.Tx, r ingest.Registration
 	if err := c.gate(ctx, tx, r.Execution.Tenant, "SHARE"); err != nil {
 		return fail(err)
 	}
-	args := []any{[]byte(r.Execution.Tenant), []byte(r.Execution.Trace), []byte(r.Execution.Span), []byte(r.Owner.Run), []byte(r.Owner.Instance), []byte(r.RegisteredBy)}
+	args := []any{[]byte(r.Execution.Tenant), r.Execution.Trace[:], r.Execution.Span[:], []byte(r.Owner.Run), []byte(r.Owner.Instance), []byte(r.RegisteredBy)}
 	var allowed bool
 	err := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM "+c.table("creator_grants")+" WHERE project=$1 AND trace_id=$2 AND span_id=$3 AND run_id=$4 AND instance_id=$5 AND principal_id=$6)", args...).Scan(&allowed)
 	if err != nil {

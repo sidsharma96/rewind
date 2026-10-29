@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 var (
@@ -12,11 +14,11 @@ var (
 )
 
 // Execution names the call shared by span and capture records, without a Kind.
-// IDs are opaque internal values, not a public format or validated OTLP encoding.
+// Trace and Span use nonzero binary OpenTelemetry IDs. Tenant is opaque.
 type Execution struct {
 	Tenant string
-	Trace  string
-	Span   string
+	Trace  traceid.Trace
+	Span   traceid.Span
 }
 
 // Owner identifies one agent instance within one run. Its project scope comes
@@ -89,7 +91,10 @@ func NewRegistrar(authorizer RegistrationAuthorizer, catalog OwnershipCatalog, m
 // its separate record catalog capability. An error is not proof that an earlier
 // attempt did not register the call.
 func (r *Registrar) Register(ctx context.Context, execution Execution, owner Owner) (RegistrationReceipt, error) {
-	for _, part := range []string{execution.Tenant, execution.Trace, execution.Span, owner.Run, owner.Instance} {
+	if !execution.Trace.Valid() || !execution.Span.Valid() {
+		return RegistrationReceipt{}, ErrInvalid
+	}
+	for _, part := range []string{execution.Tenant, owner.Run, owner.Instance} {
 		if !validRegistrationID(part) {
 			return RegistrationReceipt{}, ErrInvalid
 		}

@@ -10,9 +10,11 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
-var sampleID = Identity{Tenant: "tenant-a", Trace: "trace-1", Span: "span-42"}
+var sampleID = Identity{Tenant: "tenant-a", Trace: traceid.Trace{1}, Span: traceid.Span{42}}
 
 type authorizeFunc func(context.Context, string) error
 
@@ -473,7 +475,7 @@ func TestFreshCoordinatorResolvesLostCommitReply(t *testing.T) {
 func TestNewExecutionAndTenantHaveSeparateIdentities(t *testing.T) {
 	s, o, c := fixture(t)
 	for _, id := range []Identity{sampleID,
-		{Tenant: sampleID.Tenant, Trace: sampleID.Trace, Span: "span-43"},
+		{Tenant: sampleID.Tenant, Trace: sampleID.Trace, Span: traceid.Span{104}},
 		{Tenant: "tenant-b", Trace: sampleID.Trace, Span: sampleID.Span},
 	} {
 		provision(t, c, id, Attribution{sampleOwner, "principal-a"})
@@ -723,7 +725,7 @@ func TestReadFailuresAreNotAbsence(t *testing.T) {
 func TestInvalidCatalogReferenceCannotReachObjects(t *testing.T) {
 	for _, change := range []func(Reference) Reference{
 		func(r Reference) Reference { r.Identity.Tenant = "tenant-b"; return r },
-		func(r Reference) Reference { r.Identity.Span = "other-span"; return r },
+		func(r Reference) Reference { r.Identity.Span = traceid.Span{101}; return r },
 		func(r Reference) Reference { r.Identity.Kind = CaptureRecord; return r },
 		func(r Reference) Reference { r.Size = -1; return r },
 	} {
@@ -763,11 +765,11 @@ func TestInputBoundsBeforeStorage(t *testing.T) {
 		t.Fatalf("oversized record = %v", err)
 	}
 	for _, id := range []Identity{
-		{Tenant: "", Trace: "trace", Span: "span"},
-		{Tenant: "tenant", Trace: "", Span: "span"},
-		{Tenant: "tenant", Trace: "trace", Span: ""},
-		{Tenant: strings.Repeat("x", maxIdentityBytes+1), Trace: "trace", Span: "span"},
-		{Tenant: "tenant", Trace: "trace", Span: "span", Kind: Kind(255)},
+		{Tenant: "", Trace: traceid.Trace{1}, Span: traceid.Span{42}},
+		{Tenant: "tenant", Trace: traceid.Trace{}, Span: traceid.Span{42}},
+		{Tenant: "tenant", Trace: traceid.Trace{1}, Span: traceid.Span{}},
+		{Tenant: strings.Repeat("x", maxIdentityBytes+1), Trace: traceid.Trace{1}, Span: traceid.Span{42}},
+		{Tenant: "tenant", Trace: traceid.Trace{1}, Span: traceid.Span{42}, Kind: Kind(255)},
 	} {
 		if _, err := s.Write(t.Context(), id, nil); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("invalid write = %v", err)

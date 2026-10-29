@@ -5,6 +5,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 func testDeliveryWindow(t *testing.T) DeliveryWindow {
@@ -195,7 +197,7 @@ func TestDeliveryWindowDoesNotCloseAnotherRunOrProject(t *testing.T) {
 		id    Identity
 		owner Owner
 	}{
-		{Identity{Tenant: sampleID.Tenant, Trace: sampleID.Trace, Span: "another-run-call"}, Owner{Run: "another-run", Instance: sampleOwner.Instance}},
+		{Identity{Tenant: sampleID.Tenant, Trace: sampleID.Trace, Span: traceid.Span{100}}, Owner{Run: "another-run", Instance: sampleOwner.Instance}},
 		{Identity{Tenant: "another-project", Trace: sampleID.Trace, Span: sampleID.Span}, sampleOwner},
 	} {
 		a := Attribution{tc.owner, "other-principal"}

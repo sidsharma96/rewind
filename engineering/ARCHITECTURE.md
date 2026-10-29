@@ -40,9 +40,13 @@ overwrite it, append an automatic revision or silently assign a new identity.
 A genuinely new execution receives a new span identity, even if its inputs and
 outputs match an earlier execution. Changed contents alone do not establish that
 a new execution happened: they might reflect a correction, a bug or tampering.
+Execution keys now use comparable 16-byte trace and 8-byte span arrays, with
+all-zero IDs refused before authorization/catalog access. Hex parsing is case
+insensitive; PostgreSQL keeps raw bytes. Other identifiers remain opaque bounded
+strings. These keys do not authenticate a producer or validate metadata contents.
 Compare defined metadata fields by their typed values, independently of outer
 transport JSON field order or spacing. Compare captured request and response bytes
-exactly; do not silently rewrite them. The concrete field schema, identity encoding,
+exactly; do not silently rewrite them. The concrete field schema, public identity encoding,
 deterministic record encoding, correction mechanism and duplicate response shape
 still need design. These are agreed contracts, not implemented behavior.
 

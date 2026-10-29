@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"github.com/sidsharma96/rewind/internal/traceid"
 )
 
 var (
@@ -38,12 +40,12 @@ const (
 
 // Identity names a record associated with an execution, not its content. Kind
 // distinguishes the span and its capture; it does not create another execution.
-// These strings are opaque internal identifiers; their external encoding and
-// authentication are not defined here.
+// Trace and Span are binary OpenTelemetry IDs; Tenant remains opaque. These
+// types do not define a public request encoding or establish authentication.
 type Identity struct {
 	Tenant string
-	Trace  string
-	Span   string
+	Trace  traceid.Trace
+	Span   traceid.Span
 	Kind   Kind
 }
 
@@ -259,10 +261,8 @@ func (s *Store) begin(ctx context.Context, id Identity) error {
 	if id.Kind != SpanRecord && id.Kind != CaptureRecord {
 		return ErrInvalid
 	}
-	for _, part := range []string{id.Tenant, id.Trace, id.Span} {
-		if part == "" || len(part) > maxIdentityBytes {
-			return ErrInvalid
-		}
+	if id.Tenant == "" || len(id.Tenant) > maxIdentityBytes || !id.Trace.Valid() || !id.Span.Valid() {
+		return ErrInvalid
 	}
 	if err := ctx.Err(); err != nil {
 		return err
