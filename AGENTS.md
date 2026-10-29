@@ -131,7 +131,8 @@ explicitly rather than imposing the roadmap's authorship split.
 
 ## Writing and the private book
 
-Before prose changes, read `docs/src/PROSE-STYLE-GUIDE.md`. Teach a beginning CS
+Before prose changes, read `docs/src/PROSE-STYLE-GUIDE.md` and `docs/BOOK-RULES.md`
+(the rules every learning book shares; they win for guide chapters). Teach a beginning CS
 student with no assumed Go knowledge through one concrete execution. Explain
 terms and syntax when first needed. Explain non-obvious Go library calls beside
 actual excerpts: what they do, why this operation needs them, who owns resources,
@@ -157,7 +158,8 @@ CONTRIBUTING covers contributor setup, normal checks, conventions and PRs. Keep
 agent configuration and detailed reviewer procedures here or in `agents/`.
 Update existing explanations; do not append a feature inventory, task report,
 dated phase review or implementation diary. Selected investigations belong in the
-private book's reference pages. Raw measurements belong in ignored `.tools/`.
+guide chapter that teaches their mechanism, or in a reference page when no chapter
+does; a recorded mistake is told as rule 3 of `docs/BOOK-RULES.md` describes. Raw measurements belong in ignored `.tools/`.
 
 Blog posts develop one supported claim: problem, mechanism, alternative, experiment,
 result and limit. Keep proposed experiments, illustrative values and observations
