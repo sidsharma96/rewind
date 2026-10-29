@@ -1,18 +1,23 @@
 package record
 
-// DurationNanos returns the unsigned timestamp difference and whether that
-// arithmetic is available. Nil metadata or end before start returns (0, false).
-// Equal timestamps return (0, true); callers must check the boolean.
+// DurationNanos returns the exact unsigned timestamp difference and whether it is
+// available under Rewind's timing policy. Nil metadata, either zero endpoint or
+// end before start returns (0, false). Equal nonzero times return (0, true).
+// Callers must check the boolean; it does not distinguish unavailability reasons.
 //
-// This is an order check, not proof of clock accuracy, timestamp presence, ended
-// status or complete validity. In particular, zero-valued timestamps receive no
-// special interpretation here. The caller must keep borrowed metadata stable
-// during the call. Reported times and all other metadata remain unchanged.
+// A zero endpoint means unknown for timing use: generated OTLP metadata cannot
+// distinguish an omitted scalar from explicit zero. This does not prove a field
+// was omitted, that clocks are accurate, that the operation ended or that the
+// record is valid. The caller must keep borrowed metadata stable during the call.
+// Reported times, including any nonzero endpoint, remain unchanged.
 func (s Span) DurationNanos() (uint64, bool) {
 	if s.Metadata == nil {
 		return 0, false
 	}
 	start, end := s.Metadata.StartTimeUnixNano, s.Metadata.EndTimeUnixNano
+	if start == 0 || end == 0 {
+		return 0, false
+	}
 	if end < start {
 		return 0, false
 	}
