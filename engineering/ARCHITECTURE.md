@@ -139,7 +139,12 @@ Received span and link flags retain all 32 bits, including unfamiliar bits; each
 full unsigned value remains retry content. Future consumers interpret documented
 bits through masks without replacing the saved value or inferring authority.
 The [flags contract](CAPTURE.md#span-and-link-flags) records the lab checks and
-consumer integration checkpoint. OTLP JSON
+consumer integration checkpoint. Floating metadata compares by exact numeric value,
+with both NaNs equal and both zero signs equal. Different numeric types stay distinct.
+The JSON metadata direction preserves ordinary double bits and zero signs when
+saving, but does not preserve NaN diagnostic bits. The
+[floating-value contract](CAPTURE.md#floating-metadata-values) records that limit,
+lab coverage and the consumer-driven revisit condition. OTLP JSON
 transport compatibility remains a separate adapter responsibility. Attribute ordering will normalize exclusively owned messages in place; caller-owned
 messages require an explicit copy first. The [ordering direction](CAPTURE.md#owned-attribute-ordering)
 preserves sequence order and keeps the encoder non-mutating. Repeated attribute
