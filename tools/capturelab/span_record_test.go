@@ -86,6 +86,41 @@ func TestSpanRecordInlineCodec(t *testing.T) {
 	}
 }
 
+func TestSpanRecordTimingCodec(t *testing.T) {
+	const max = ^uint64(0)
+	for _, pair := range [][2]uint64{{20, 10}, {20, 20}, {20, 30}, {0, max}} {
+		in := otlpFixture()
+		metadata := in.ResourceSpans[0].ScopeSpans[0].Spans[0]
+		metadata.StartTimeUnixNano, metadata.EndTimeUnixNano = pair[0], pair[1]
+		before := proto.Clone(in)
+		view, err := spanrecord.SpanAt(in, 0, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		n, available := view.DurationNanos()
+		wrapped, err := view.OTLP()
+		if err != nil {
+			t.Fatal(err)
+		}
+		encoded, err := encodeOTLPJSON(wrapped)
+		if err != nil || !proto.Equal(in, before) {
+			t.Fatal("encoding changed or refused the reported timing")
+		}
+		metadata.StartTimeUnixNano, metadata.EndTimeUnixNano = 1, 1
+		decoded, err := decodeOTLPJSON(encoded)
+		if err != nil || !proto.Equal(decoded, before) {
+			t.Fatal("codec did not preserve the original reported timestamps")
+		}
+		view, err = spanrecord.SpanAt(decoded, 0, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, ok := view.DurationNanos(); got != n || ok != available {
+			t.Fatal("timing interpretation changed after codec round trip")
+		}
+	}
+}
+
 func TestSpanRecordOptionalContextCodec(t *testing.T) {
 	for _, present := range []bool{false, true} {
 		in := otlpFixture()

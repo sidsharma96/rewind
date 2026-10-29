@@ -116,6 +116,67 @@ individual codec round trips for encodable selections. That is memory/format evi
 or remote durability evidence. Full semantic/equality rules,
 record framing/version and runtime codec integration remain open.
 
+## Reported timestamps and derived duration
+
+The selected policy keeps original span timestamps when end is before start,
+exposes a timing warning and unavailable duration, and excludes that unusable
+duration from duration calculations and timed replay. This does not relax identity,
+authorization, bounds or unsupported-metadata rules. AcceptedAt and retention remain
+catalog-owned; producer clock values cannot move those decisions.
+
+The `Span.DurationNanos() (uint64, bool)` operation derives an unsigned
+nanosecond difference only after checking numeric order. Nil metadata or end before
+start returns `(0, false)`; equal timestamps return `(0, true)`. The boolean must
+be checked: unavailable is different from a measured numeric zero. Return the full
+unsigned difference, without narrowing it to Go's signed `time.Duration` or
+floating point. No normalization, mutation, cached warning field or saved schema
+change is needed. The borrowed metadata must remain stable while read.
+
+This helper checks arithmetic only. A true result does not establish clock accuracy,
+ended status, timestamp presence, authorization or complete record validity. In
+particular, equal zero-valued fields have a zero arithmetic difference; their
+meaning at admission is still undecided. The method does not infer missingness
+from a protocol scalar's zero value. A future consumer must first distinguish a
+missing span from an existing span with reversed timing. Runtime acceptance,
+warning presentation, aggregates and replay consumers remain unimplemented.
+
+The operation uses O(1) fixed-width work and space with no allocation, graph copy,
+object/catalog request, transferred bytes or recovery state. An unconditional
+unsigned subtraction can wrap to a huge positive duration when end is smaller.
+A signed duration conversion can lose values above its positive range. Compare
+with a signed arbitrary-precision subtraction oracle in maintained tests; round-trip
+reversed and zero-duration metadata through the lab codec without changing it.
+
+### External evidence and its limits
+
+- Jaeger's `adjustTimestamps` at revision
+  `2bef72022bbad6c692ac3aaf6c6a372c4b495b86`,
+  `cmd/jaeger/internal/extension/jaegerquery/internal/adjuster/clockskew.go`, shifts
+  start/end/events at query time and records a warning. Its RPC alignment assumes
+  equal request/response network latency. This is presentation correction for
+  cross-host skew, not evidence of a general reversed-span ingestion policy.
+- Tempo's latency subprocessor at `d0e737c714489ab62e0a2bb00402687161b92132`,
+  `modules/generator/processor/spanmetrics/spanmetrics.go:248`, and Collector's
+  `aggregateMetrics` at `f953484a157760796bb45c80972eb32ddc7bce6e`,
+  `connector/spanmetricsconnector/connector.go:450`, use zero latency for reversed
+  timestamps. Their workload is metric generation. Rewind chooses unavailable
+  duration for inspection/playback rather than presenting a fabricated zero;
+  future metrics must account explicitly for omitted duration samples.
+- OpenTelemetry Go's `monotonicEndTime` and `recordingSpan.End` at
+  `983defdf55ffda64c2d3ddebcb85c5a5af2eb08a`, `sdk/trace/span.go`, use elapsed
+  monotonic time for ordinary completion; an explicit end timestamp overrides
+  that path. A wall-clock adjustment does not normally imply a negative span
+  duration when the SDK's start/end path retains monotonic readings.
+- Honeycomb's [event-latency investigation](https://www.honeycomb.io/blog/ingest-timestamps-debug-event-latency)
+  compares reported event time with API acceptance time. Its documented Lambda
+  export delay illustrates diagnostic value of separate times, not a policy for
+  accepting reversed span timestamps.
+
+These mechanisms inform the selected policy; they do not establish a universal
+observability ingestion rule. Revisit admission defaults, query-time presentation
+and aggregate sample accounting with their own concrete workloads. Do not infer
+causality or silently adjust stored evidence from a timestamp-only comparison.
+
 ## Generated metadata and JSON
 
 Use `go.opentelemetry.io/proto/otlp` v1.9.0 for the selected generated types. Its
