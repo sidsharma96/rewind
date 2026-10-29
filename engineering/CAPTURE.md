@@ -70,6 +70,23 @@ packet for the existing lab codec, without duplicating generated field definitio
 This is an internal association operation, not a complete saved format or validation
 boundary. Do not add storage, authentication or ingest dependencies to it.
 
+The identity operation `Span.IDs()` returns checked, owned
+`traceid.Trace` and `traceid.Span` arrays from that selected generated span's binary
+slices. It must return both zero values on every error, including a valid trace
+paired with an invalid span. Nil metadata returns `record.ErrInvalid`; invalid
+width/all-zero IDs return `traceid.ErrInvalid`. It neither alters nor retains the
+original ID buffers. Callers keep the borrowed graph stable during extraction.
+Context labels, parent IDs and links cannot supply the selected execution's key.
+
+This operation is independent of completion: trusted ownership registration needs
+an identity before the call ends, and future lifecycle events will use that same
+execution. It grants no authority and does not accept a record. The selected typed
+acceptance direction saves ended spans, including failures, once; unfinished
+progress belongs in separately identified immutable lifecycle events when their
+contract is implemented. Neither selection, reconstruction nor ID extraction
+enforces ended-span admission yet. Do not confuse embedded OTLP span events with
+separately acknowledged lifecycle records or treat a crash as a successful end.
+
 Selection and reconstructed wrappers borrow resource/scope/span pointers, and are
 read-only while used. New wrapper messages/slices do not imply a deep snapshot or
 exclusive ownership of the reachable graph. Callers retaining a mutable input must
@@ -96,7 +113,7 @@ The maintained lab encodes individual records with both grouping URLs and Resour
 entity references, then decodes them after original input mutation. A property
 fuzzer compares selected reconstruction against cloning/pruning the input, with
 individual codec round trips for encodable selections. That is memory/format evidence, not host-loss
-or remote durability evidence. Identity mapping, full semantic/equality rules,
+or remote durability evidence. Full semantic/equality rules,
 record framing/version and runtime codec integration remain open.
 
 ## Generated metadata and JSON

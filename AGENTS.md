@@ -82,6 +82,17 @@ library. Establish its contract with a write/read/recovery sequence from each
 project before extracting shared code. Do not create a shared repository, cache,
 engine, schema or deployment on the strength of that direction alone. Preserve
 application-specific identity, authorization, catalogs, retention and acknowledgments.
+Read `engineering/OBJECTS.md#extraction-checkpoint` before changing object-storage
+contracts or adding range reads, deletion, verification reuse or caching. Revisit
+coordination after native publication and an ingest-host replacement drill, before
+replay/viewer work. Keep the handoff current and distinguish a prepared note from
+a delivered cross-agent exchange or an agreed shared API.
+
+The first typed span path saves ended spans, including failures, as immutable final
+records. Preserve a separate future lifecycle-event path using the same registered
+execution and independent event identities; do not overwrite final spans with
+start/progress updates. Registration is not a durable progress event. See
+`engineering/ARCHITECTURE.md` for unimplemented lifecycle guarantees.
 
 ## Independent review
 
