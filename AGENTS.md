@@ -118,6 +118,12 @@ bit supplies meaning or authority. Revisit if a required consumer cannot safely
 separate known-bit interpretation from preserved unknown bits; show its concrete
 failure first. See `engineering/CAPTURE.md#span-and-link-flags`.
 
+Floating metadata compares by exact numeric value, with both NaNs equal and both
+zero signs equal; different numeric types remain distinct. JSON saving does not
+preserve NaN diagnostic bits. Preserve original zero signs in saved metadata and
+exact capture bytes. Revisit if a required consumer needs zero sign or NaN bits as
+retry-significant evidence. See `engineering/CAPTURE.md#floating-metadata-values`.
+
 For retry comparison only, absent and completely default Resource, Scope and Status
 messages are equivalent at their three span/context positions. Preserve original
 encoded presence; never generalize this to arbitrary nested messages or capture

@@ -274,7 +274,9 @@ generated messages, without adding an application API or changing the earlier
 toy-type size/timing fixtures. It exercises resource,
 scope and span with both schema URLs, typed attributes, events, links, flags,
 status, counts and exact integer timestamps. It compares decoded messages with their
-originals for structural round-trip fidelity, not as a chosen logical retry rule.
+originals for structural value fidelity, not as a complete logical retry rule.
+For floating values this excludes NaN diagnostic bits, as the
+[floating-value contract](#floating-metadata-values) defines.
 It checks integer 12 versus text "12", the pinned AnyValue alternatives including
 empty, large signed integers and metadata bytes. Captured bodies remain separate.
 
@@ -449,6 +451,69 @@ do not bypass unknown-wire refusal. A property fuzzer varies both signed 32-bit
 values through ordering/encoding/decoding. These are representation and refusal
 checks; no full admission, consumer-safety, performance or remote-durability result
 follows.
+
+## Floating metadata values
+
+Compare floating metadata by exact numeric value, with every NaN equal to every
+other NaN and positive/negative zero equal. Distinct finite nonzero values, including
+adjacent representable values, remain different. Signed infinities remain distinct.
+Never use a tolerance, round an attribute before comparison or equate different
+numeric types: integer 12, double 12 and text "12" are different typed contents.
+NaN must not become zero, missing data, success or an ordinary finite value.
+
+The selected JSON metadata representation writes NaN as one explicit string value.
+It deliberately does not preserve NaN diagnostic payload, sign or signaling bits.
+Ordinary double bit patterns, both zero signs and signed infinities survive the
+codec. Saving does not rewrite a zero sign just because the signs compare equally
+for retries. Equivalent retries retain the original accepted encoding, attribution,
+reference and deadlines. Exact captured request/response bytes and their states
+keep their separate rules; this is not a numeric interpretation of capture bodies.
+
+The current lab codec already has these representation properties. The maintained
+comparison projection uses `proto.Equal` on owned projections, which supplies the
+selected float semantics. New tests compare it with an independent oracle on the
+input IEEE 754 bit classes: zeros form one class, NaNs form one class, all other
+bits must match. Tests cover 15 patterns and 225 paired comparisons, signed zero,
+multiple NaNs, extreme finite/subnormal values, signed infinities and adjacent
+finite numbers. Non-NaN round trips require exact output bits, not just value
+equality; encoding/ordering must leave original input bits unchanged even for NaNs.
+Decoded output must survive source mutation. Nested checks cover resource, scope,
+span, event and link attributes plus array/key/value positions; different types
+and malformed double input remain distinct or refused. A fuzzer varies two uint64
+patterns through codec and comparison against that bit-class oracle. These are
+bounded local checks, not a runtime comparator, complete semantic admission,
+consumer validation or remote durability evidence.
+
+The simplest alternative requires exact float bits as evidence and retry identity.
+It can preserve numerical debugging details, but needs a saved representation that
+retains NaN bits before comparison; comparing bits after JSON decoding cannot
+recover them. Zero sign can affect operations such as division, and NaN diagnostic
+bits may carry useful low-level evidence. We choose value comparison for typed
+tracing metadata under the selected JSON direction, accepting those limits.
+Revisit if a required consumer or supported workload needs zero sign or NaN bits
+as retry-significant evidence. Name it, reproduce the failure and compare a
+bit-preserving representation or narrower support before changing this contract.
+Actual numeric/replay consumers remain unimplemented.
+
+Scalar value comparison has constant time/space work and adds no stored metadata,
+worker or object request. Existing bounded traversal, sorting, copying and decoding
+keep their own costs. Exact-bit comparison is also constant per scalar; its saved
+representation/version costs depend on the design and are unmeasured. The selected
+different-bytes retry read and final authority/expiry/reference recheck still apply.
+
+As inspected in October 2026, protobuf-go v1.36.12's
+[`equalFloat`](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/reflect/protoreflect/value_equal.go#L81-L87)
+uses numeric equality plus a both-NaN case. That is protobuf value comparison,
+not bit-forensic identity or Rewind authorization. Its JSON
+[`appendFloat`](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/internal/encoding/json/encode.go#L148-L170)
+and Collector pdata v1.70.0's JSON
+[`WriteFloat64`](https://github.com/open-telemetry/opentelemetry-collector/blob/f532e15ef29b6ed7fefad2b23a0fefd27120ef9b/pdata/internal/json/stream.go#L89-L107)
+serialize all NaNs using one spelling. Those transport codecs support the selected
+representation's feasibility, not its suitability for every numerical consumer.
+Protobuf-go's binary
+[`appendDouble`](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/internal/impl/codec_gen.go#L4693-L4697)
+writes `Float64bits` as fixed64, illustrating a credible bit-preserving alternative.
+That observation does not select a different metadata format for Rewind.
 
 ## Span and link flags
 
