@@ -124,20 +124,29 @@ duration from duration calculations and timed replay. This does not relax identi
 authorization, bounds or unsupported-metadata rules. AcceptedAt and retention remain
 catalog-owned; producer clock values cannot move those decisions.
 
+Zero-valued endpoints remain raw zero but mean unknown for timing use. Preserve
+the other endpoint if it is nonzero; do not fill unknown time from arrival time,
+infer completion or reject an otherwise admissible final span for this reason alone.
+This intentionally gives up timing a genuine exact Unix-epoch-zero endpoint from
+this representation. Interpreting zero literally would instead turn an omitted
+start into a seemingly measured decades-long call. A missing span is still invalid;
+this policy does not create a span when metadata is absent.
+
 The `Span.DurationNanos() (uint64, bool)` operation derives an unsigned
-nanosecond difference only after checking numeric order. Nil metadata or end before
-start returns `(0, false)`; equal timestamps return `(0, true)`. The boolean must
-be checked: unavailable is different from a measured numeric zero. Return the full
+nanosecond difference only after checking both endpoints are nonzero and ordered.
+Nil metadata, either zero endpoint or end before start returns `(0, false)`;
+equal nonzero timestamps return `(0, true)`. The boolean must
+be checked: unavailable is different from a measured numeric zero. Return the exact
 unsigned difference, without narrowing it to Go's signed `time.Duration` or
 floating point. No normalization, mutation, cached warning field or saved schema
 change is needed. The borrowed metadata must remain stable while read.
 
-This helper checks arithmetic only. A true result does not establish clock accuracy,
-ended status, timestamp presence, authorization or complete record validity. In
-particular, equal zero-valued fields have a zero arithmetic difference; their
-meaning at admission is still undecided. The method does not infer missingness
-from a protocol scalar's zero value. A future consumer must first distinguish a
-missing span from an existing span with reversed timing. Runtime acceptance,
+This helper applies the timing interpretation and order check only. A true result
+does not establish clock accuracy, ended status, authorization or complete record
+validity. Unknown is a Rewind interpretation, not proof that the sender omitted a
+field. A future warning consumer must first distinguish missing metadata, unknown
+endpoints and reversed nonzero endpoints by inspecting the unchanged fields; the
+availability boolean is not a warning code. Runtime acceptance,
 warning presentation, aggregates and replay consumers remain unimplemented.
 
 The operation uses O(1) fixed-width work and space with no allocation, graph copy,
@@ -145,10 +154,19 @@ object/catalog request, transferred bytes or recovery state. An unconditional
 unsigned subtraction can wrap to a huge positive duration when end is smaller.
 A signed duration conversion can lose values above its positive range. Compare
 with a signed arbitrary-precision subtraction oracle in maintained tests; round-trip
-reversed and zero-duration metadata through the lab codec without changing it.
+reversed, unknown and known zero-duration metadata through the lab codec without
+changing it. Check the explicit nonzero precondition separately from the arithmetic
+oracle; full-range nonzero subtraction must not narrow to a signed value.
 
 ### External evidence and its limits
 
+- The [OTLP span schema](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/trace/v1/trace.proto#L168-L181)
+  uses proto3 `fixed64` timestamp fields without `optional`. They represent Unix
+  epoch nanoseconds and are semantically required; the comments do not reserve zero
+  as missing. [Protobuf presence rules](https://protobuf.dev/programming-guides/field_presence/#semantic-differences)
+  explain that the generated API cannot distinguish omitted and explicitly zero
+  scalars. This establishes ambiguity, not a standard mandate to reject zero.
+  Rewind chooses unknown for inspection/playback while preserving the raw fields.
 - Jaeger's `adjustTimestamps` at revision
   `2bef72022bbad6c692ac3aaf6c6a372c4b495b86`,
   `cmd/jaeger/internal/extension/jaegerquery/internal/adjuster/clockskew.go`, shifts
@@ -173,7 +191,8 @@ reversed and zero-duration metadata through the lab codec without changing it.
   accepting reversed span timestamps.
 
 These mechanisms inform the selected policy; they do not establish a universal
-observability ingestion rule. Revisit admission defaults, query-time presentation
+observability ingestion rule. Revisit explicit timestamp presence if exact epoch-zero
+timing becomes a supported workload, and revisit admission, query-time presentation
 and aggregate sample accounting with their own concrete workloads. Do not infer
 causality or silently adjust stored evidence from a timestamp-only comparison.
 

@@ -45,17 +45,22 @@ contract. Existing embedded OTLP span events arrive with their exported span;
 they do not by themselves implement independently durable live progress. Lifecycle
 events are a required extension direction, not a new implemented record kind,
 live trace stream, atomic run log or runtime messaging service. The concrete
-ended-span admission operation and missing/zero timestamp policy remain separate
-design work.
+ended-span admission operation remains separate design work; timestamp values
+alone do not prove completion.
 
 Preserve reported span timestamps even when the end precedes the start. Derive a
 timing warning and unavailable duration; do not silently replace the timestamps
 or turn unknown duration into a measured zero. Such spans must not contribute an
-unusable duration to future duration calculations or timed replay. Catalog-owned
-acceptance/retention/permission clocks remain separate. Cross-host clock alignment
-is a different problem: ordered local times do not establish cross-agent chronology.
+unusable duration to future duration calculations or timed replay.
+Zero-valued endpoints remain unchanged and mean unknown for timing use, because
+generated OTLP metadata cannot distinguish an omitted scalar from explicit zero.
+Keep any nonzero endpoint; do not replace unknown time with acceptance time or
+infer whether the operation finished. Equal nonzero endpoints have zero duration.
+Catalog-owned acceptance, retention and permission clocks remain separate.
+Cross-host clock alignment is a different problem: ordered local times do not
+establish cross-agent chronology.
 The [timing contract](CAPTURE.md#reported-timestamps-and-derived-duration) defines
-the first arithmetic helper, not a complete admission, metrics or replay path.
+the duration helper, not a complete admission, metrics or replay path.
 
 An eventual lifecycle key combines the authorized project, registered trace/span
 execution and a stable event ID; identical retries cannot become new progress.

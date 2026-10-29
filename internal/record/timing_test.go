@@ -22,12 +22,13 @@ func TestSpanDurationNanos(t *testing.T) {
 		{"ordered", 20, 30, 10, true},
 		{"reversed", 30, 20, 0, false},
 		{"equal", 20, 20, 0, true},
-		{"zero arithmetic", 0, 0, 0, true},
-		{"zero start", 0, 1, 1, true},
+		{"unknown both", 0, 0, 0, false},
+		{"zero start", 0, 1, 0, false},
 		{"zero end", 1, 0, 0, false},
-		{"signed boundary", 0, 1 << 63, 1 << 63, true},
+		{"unknown start with large end", 0, max, 0, false},
+		{"signed boundary", 1, 1<<63 + 1, 1 << 63, true},
 		{"high timestamps", 1 << 63, 1<<63 + 1, 1, true},
-		{"full unsigned range", 0, max, max, true},
+		{"full nonzero range", 1, max, max - 1, true},
 		{"last nanosecond", max - 1, max, 1, true},
 		{"max equal", max, max, 0, true},
 		{"max reversed", max, 0, 0, false},
@@ -59,7 +60,7 @@ func TestSpanDurationNanos(t *testing.T) {
 
 func FuzzSpanDurationNanos(f *testing.F) {
 	const max = ^uint64(0)
-	for _, pair := range [][2]uint64{{0, 0}, {20, 30}, {30, 20}, {0, 1 << 63}, {0, max}, {max, 0}, {max - 1, max}} {
+	for _, pair := range [][2]uint64{{0, 0}, {0, 1}, {1, 0}, {20, 30}, {20, 20}, {30, 20}, {1, 1<<63 + 1}, {0, max}, {1, max}, {max, 0}, {max - 1, max}} {
 		f.Add(pair[0], pair[1])
 	}
 	f.Fuzz(func(t *testing.T, start, end uint64) {
@@ -69,12 +70,19 @@ func FuzzSpanDurationNanos(f *testing.F) {
 		// unsigned guard and cannot wrap or narrow at the uint64/int64 boundary.
 		var a, b, difference big.Int
 		difference.Sub(a.SetUint64(end), b.SetUint64(start))
-		if difference.Sign() < 0 {
+		switch {
+		case start == 0 || end == 0:
+			if ok || n != 0 {
+				t.Fatal("unknown endpoint produced a measured duration")
+			}
+		case difference.Sign() < 0:
 			if ok || n != 0 {
 				t.Fatal("negative mathematical interval became a numeric duration")
 			}
-		} else if !ok || !difference.IsUint64() || n != difference.Uint64() {
-			t.Fatal("ordered interval lost its exact unsigned difference")
+		default:
+			if !ok || !difference.IsUint64() || n != difference.Uint64() {
+				t.Fatal("known ordered interval lost its exact unsigned difference")
+			}
 		}
 		if metadata.StartTimeUnixNano != start || metadata.EndTimeUnixNano != end {
 			t.Fatal("timing derivation changed input")

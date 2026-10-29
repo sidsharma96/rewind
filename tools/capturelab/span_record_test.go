@@ -88,7 +88,7 @@ func TestSpanRecordInlineCodec(t *testing.T) {
 
 func TestSpanRecordTimingCodec(t *testing.T) {
 	const max = ^uint64(0)
-	for _, pair := range [][2]uint64{{20, 10}, {20, 20}, {20, 30}, {0, max}} {
+	for _, pair := range [][2]uint64{{20, 10}, {20, 20}, {20, 30}, {0, 0}, {0, max}, {max, 0}, {1, max}} {
 		in := otlpFixture()
 		metadata := in.ResourceSpans[0].ScopeSpans[0].Spans[0]
 		metadata.StartTimeUnixNano, metadata.EndTimeUnixNano = pair[0], pair[1]
