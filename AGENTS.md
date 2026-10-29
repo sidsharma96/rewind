@@ -47,13 +47,18 @@ sources, pin implementation references, and explain their workload, mechanism an
 limits. Bring that evidence into the initial comparison; distinguish observations
 from our proposed design rather than treating popularity as justification.
 
-Explain implementation decisions to the user as a newcomer. Start with one concrete
-example, use a simple diagram or small comparison table when it clarifies the choice,
-then show short Go snippets and explain unfamiliar terms. Present one consequential
-decision at a time, with the trade-offs and a recommendation, and ask which option
-the user prefers. Ask in ordinary chat prose, with readable options, reasoning,
-trade-offs, a defense of the recommendation and short snippets where useful. Do not
-use clickable/tappable question forms unless the user explicitly requests them.
+Explain implementation decisions to the user as a newcomer. At each consequential
+checkpoint, lead with the question and recommendation, follow one concrete example
+with a simple illustration or sequence diagram, compare credible options in a
+choice/benefit/risk-or-cost table, and show short illustrative Go snippets with
+unfamiliar syntax explained. Include pinned primary research in the initial
+comparison: explain each system's workload, observed mechanism, relevance and limits,
+then distinguish that evidence from our inference and proposed design. Defend the
+recommendation and state what would make us revisit it. Label illustrative code and
+unmeasured costs; reviewer approval is not research or experimental evidence.
+Present one consequential decision at a time and ask which option the user prefers
+in ordinary chat prose. Do not use clickable/tappable question forms unless the
+user explicitly requests them.
 Base recommendations on the finished project's requirements; distinguish a useful
 implementation step from the intended final architecture. Keep routine implementation
 moving between decision points.
@@ -131,7 +136,8 @@ explicitly rather than imposing the roadmap's authorship split.
 
 ## Writing and the private book
 
-Before prose changes, read `docs/src/PROSE-STYLE-GUIDE.md`. Teach a beginning CS
+Before prose changes, read `docs/src/PROSE-STYLE-GUIDE.md` and `docs/BOOK-RULES.md`
+(the rules every learning book shares; they win for guide chapters). Teach a beginning CS
 student with no assumed Go knowledge through one concrete execution. Explain
 terms and syntax when first needed. Explain non-obvious Go library calls beside
 actual excerpts: what they do, why this operation needs them, who owns resources,
@@ -157,7 +163,8 @@ CONTRIBUTING covers contributor setup, normal checks, conventions and PRs. Keep
 agent configuration and detailed reviewer procedures here or in `agents/`.
 Update existing explanations; do not append a feature inventory, task report,
 dated phase review or implementation diary. Selected investigations belong in the
-private book's reference pages. Raw measurements belong in ignored `.tools/`.
+guide chapter that teaches their mechanism, or in a reference page when no chapter
+does; a recorded mistake is told as rule 3 of `docs/BOOK-RULES.md` describes. Raw measurements belong in ignored `.tools/`.
 
 Blog posts develop one supported claim: problem, mechanism, alternative, experiment,
 result and limit. Keep proposed experiments, illustrative values and observations

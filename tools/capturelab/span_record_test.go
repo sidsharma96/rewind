@@ -121,6 +121,72 @@ func TestSpanRecordTimingCodec(t *testing.T) {
 	}
 }
 
+func TestDeclaredEndedSpanCodec(t *testing.T) {
+	for _, status := range []tracepb.Status_StatusCode{tracepb.Status_STATUS_CODE_UNSET, tracepb.Status_STATUS_CODE_OK, tracepb.Status_STATUS_CODE_ERROR} {
+		for _, times := range [][2]uint64{{0, 0}, {20, 10}, {10, 20}} {
+			in := otlpFixture()
+			metadata := in.ResourceSpans[0].ScopeSpans[0].Spans[0]
+			metadata.Status = &tracepb.Status{Code: status}
+			metadata.StartTimeUnixNano, metadata.EndTimeUnixNano = times[0], times[1]
+			before := proto.Clone(in)
+			selected, err := spanrecord.SpanAt(in, 0, 0, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// This is the caller's final declaration, not an inference from the
+			// status/timing fields and not storage acceptance or authentication.
+			ended, err := selected.DeclareEnded()
+			if err != nil {
+				t.Fatal(err)
+			}
+			view, err := ended.View()
+			if err != nil {
+				t.Fatal(err)
+			}
+			wrapped, err := view.OTLP()
+			if err != nil {
+				t.Fatal(err)
+			}
+			encoded, err := encodeOTLPJSON(wrapped)
+			if err != nil || !proto.Equal(in, before) {
+				t.Fatalf("status=%v times=%v: encoding changed or refused metadata: %v", status, times, err)
+			}
+			// Borrowed views end their use before the source changes. Only the
+			// encoded bytes are an independent snapshot in this lab.
+			metadata.Status.Code = tracepb.Status_STATUS_CODE_ERROR
+			metadata.StartTimeUnixNano, metadata.EndTimeUnixNano = 1, 1
+			clear(metadata.TraceId)
+			in.ResourceSpans[0].ScopeSpans[0].Scope.Name = "changed"
+			decoded, err := decodeOTLPJSON(encoded)
+			if err != nil || !proto.Equal(decoded, before) {
+				t.Fatalf("status=%v times=%v: saved metadata lost original contents", status, times)
+			}
+		}
+	}
+	// A final declaration cannot bypass the separate unsupported-field guard.
+	in := otlpFixture()
+	in.ResourceSpans[0].ScopeSpans[0].Spans[0].ProtoReflect().SetUnknown(unknownWire([]byte("future")))
+	selected, err := spanrecord.SpanAt(in, 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended, err := selected.DeclareEnded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := ended.View()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped, err := view.OTLP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := encodeOTLPJSON(wrapped); !errors.Is(err, errUnsupportedMetadata) || b != nil {
+		t.Fatal("completion declaration bypassed unsupported-field refusal")
+	}
+}
+
 func TestSpanRecordOptionalContextCodec(t *testing.T) {
 	for _, present := range []bool{false, true} {
 		in := otlpFixture()

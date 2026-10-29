@@ -44,9 +44,19 @@ Neither a new span ID for each update nor rewriting final metadata supplies that
 contract. Existing embedded OTLP span events arrive with their exported span;
 they do not by themselves implement independently durable live progress. Lifecycle
 events are a required extension direction, not a new implemented record kind,
-live trace stream, atomic run log or runtime messaging service. The concrete
-ended-span admission operation remains separate design work; timestamp values
-alone do not prove completion.
+live trace stream, atomic run log or runtime messaging service.
+
+Final-span submission is an explicit declaration by the authorized producer or
+scoped collector that the operation has ended. No timestamp, status, registration
+or arrival-order inference supplies that declaration. It records reported
+completion, not independently witnessed cessation of external work. Do not require
+a separate per-execution catalog completion transition before saving the final
+span. Existing ownership, run admission, delivery and retention checks still apply.
+The internal `Span.DeclareEnded` operation returns a borrowed `EndedSpan` after
+checking the execution IDs; a zero declaration cannot expose a view. The encoding
+lab consumes this declaration, but runtime typed submission, complete validation
+and saved encoding remain unimplemented. See the
+[declaration contract](CAPTURE.md#explicit-ended-span-declaration).
 
 Preserve reported span timestamps even when the end precedes the start. Derive a
 timing warning and unavailable duration; do not silently replace the timestamps
