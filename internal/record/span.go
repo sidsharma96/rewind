@@ -28,7 +28,8 @@ type Context struct {
 // read-only view, not an immutable snapshot or a validated acceptance record.
 // Callers must not mutate the reachable graph while a view is in use. Clone
 // explicitly before in-place normalization if another caller retains the graph.
-// Complete semantic validity, identity mapping and retry equality are separate.
+// IDs extracts checked execution keys; complete semantic validity and retry
+// equality remain separate.
 type Span struct {
 	Context  Context
 	Metadata *tracepb.Span

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	spanrecord "github.com/sidsharma96/rewind/internal/record"
+	"github.com/sidsharma96/rewind/internal/traceid"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	resourcepb "go.opentelemetry.io/proto/otlp/resource/v1"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
@@ -28,8 +29,14 @@ func TestSpanRecordInlineCodec(t *testing.T) {
 	before := proto.Clone(in)
 	var encoded [][]byte
 	var expected []*tracepb.TracesData
+	var traces []traceid.Trace
+	var spans []traceid.Span
 	for p := 0; p < 2; p++ {
 		view, err := spanrecord.SpanAt(in, 0, 0, p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		trace, span, err := view.IDs()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -45,6 +52,8 @@ func TestSpanRecordInlineCodec(t *testing.T) {
 		want.ResourceSpans[0].ScopeSpans[0].Spans = want.ResourceSpans[0].ScopeSpans[0].Spans[p : p+1]
 		encoded = append(encoded, b)
 		expected = append(expected, want)
+		traces = append(traces, trace)
+		spans = append(spans, span)
 	}
 	if !proto.Equal(in, before) {
 		t.Fatal("selection/reconstruction/encoding changed input")
@@ -57,10 +66,22 @@ func TestSpanRecordInlineCodec(t *testing.T) {
 	ss.SchemaUrl = "changed"
 	ss.Spans[0].Name = "changed"
 	ss.Spans[1].Name = "changed"
+	for _, span := range ss.Spans {
+		clear(span.TraceId)
+		clear(span.SpanId)
+	}
 	for p, b := range encoded {
 		decoded, err := decodeOTLPJSON(b)
 		if err != nil || !proto.Equal(decoded, expected[p]) {
 			t.Fatal("independent encoded span lost its inline context or metadata")
+		}
+		view, err := spanrecord.SpanAt(decoded, 0, 0, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		trace, span, err := view.IDs()
+		if err != nil || trace != traces[p] || span != spans[p] {
+			t.Fatal("encoded span changed its binary execution identity")
 		}
 	}
 }

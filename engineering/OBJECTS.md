@@ -116,6 +116,22 @@ an ambiguous object write and catalog commit, and count requests/transferred byt
 Keep the different scope, length and admission contracts explicit before choosing
 a library API. Neither adapter currently supplies range reads or safe deletion.
 
+The coordination trigger is any proposed change to the object operations or their
+scope, integrity, bounds, retry/error, admission or timeout contract, including
+range reads, deletion and reuse/cache shortcuts. Review this checkpoint with the
+Concordance development agent before such work diverges. Also revisit immediately
+after Rewind's first native record publication and ingest-host replacement drill;
+do not wait for replay or the trace viewer. The shared code remains a small
+in-process library; this is not a message bus for agents running in either product.
+
+The handoff must name both source revisions and cover each application's authorized
+write, committed catalog reference, replacement-writer read, lost write/commit
+replies, requests, transferred bytes and remaining failures. Keep application
+acknowledgments distinct. Propose the smallest common API only when both sequences
+are exercised; review the differences above and require an explicit response from
+the other project's agent before calling that API agreed. Until then, the source
+comparison here is readiness evidence, not a sent message or approved extraction.
+
 ## Opt-in development-bucket probe
 
 `TestR2LiveImmutableObjects` only targets `rewind-dev`. Supply

@@ -31,6 +31,31 @@ adapter and dependency-substitution policy. Do not promise that external models
 produce identical output. A trace may omit inputs required for replay; expose
 capture completeness and redaction rather than inventing missing state.
 
+The initial typed span path will accept ended spans, including ended failed calls,
+as one immutable final record. Registration may precede completion; it establishes
+authority, not a saved span or evidence that the call finished. Never save a start
+snapshot into that final span slot and overwrite it later. A process crash before
+delivery may leave the final span missing; do not fabricate its outcome.
+
+Design for separate immutable lifecycle events linked to the same registered
+execution. Such events need their own event identities, retry/conflict rules,
+authorization, retention, ordering and delivery guarantees before implementation.
+Neither a new span ID for each update nor rewriting final metadata supplies that
+contract. Existing embedded OTLP span events arrive with their exported span;
+they do not by themselves implement independently durable live progress. Lifecycle
+events are a required extension direction, not a new implemented record kind,
+live trace stream, atomic run log or runtime messaging service. Timestamp validity
+and the concrete ended-span admission operation remain separate design work.
+
+An eventual lifecycle key combines the authorized project, registered trace/span
+execution and a stable event ID; identical retries cannot become new progress.
+Its writer must satisfy the execution owner/delegation boundary. An acknowledgment
+must cover that event's remotely saved bytes and catalog reference independently
+of the final span. Version/kind dispatch must distinguish events from final spans;
+an unsupported kind must not be decoded as a span. Keep explicit missing evidence
+when assembling a run; arrival order and wall-clock timestamps alone do not prove
+cross-agent causality. These are extension constraints, not a frozen event schema.
+
 Tenant-scoped span identity controls retries and conflicts. Content hashes identify
 payload bytes and do not replace event identity or authorization. After authorization,
 an identical retry succeeds without creating another logical span. Different contents
@@ -214,6 +239,18 @@ from each project before extracting it. Keep journals, catalogs, publication
 transactions, compaction, retention, tenant policy and acknowledgments with each
 application. Defer shared caching, a separate service and a shared storage engine.
 Do not add cross-checkout imports or local module replacements to public source.
+
+Coordinate development before changing either object adapter's scope, read bounds,
+integrity, error/retry contract, admission or timeout behavior, and before adding
+range reads, deletion, verification reuse or caching. Recheck readiness as soon as
+native record publication and ingest-host replacement work, rather than waiting
+for replay or a viewer. The [extraction checkpoint](OBJECTS.md#extraction-checkpoint)
+is the maintained handoff: compare current revisions, concrete sequences, measured
+requests/bytes, differences and unresolved outcomes with Concordance's development
+agent before proposing a shared API. A local note is not a delivered message or
+agreement. Begin extraction only after both recovery examples establish a contract
+and the joint API/design is reviewed. This coordination does not create runtime
+communication between application agents.
 
 ## Deferred agent safety extension
 
