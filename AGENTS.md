@@ -41,6 +41,12 @@ major dependencies or deployment with the user. Proceed with routine authorized
 implementation without repeated confirmation. A local experiment can resolve an
 uncertainty; distinguish its result from approval of a larger design.
 
+Research relevant established open-source implementations or documented production
+systems before presenting consequential options and recommendations. Prefer primary
+sources, pin implementation references, and explain their workload, mechanism and
+limits. Bring that evidence into the initial comparison; distinguish observations
+from our proposed design rather than treating popularity as justification.
+
 Explain implementation decisions to the user as a newcomer. Start with one concrete
 example, use a simple diagram or small comparison table when it clarifies the choice,
 then show short Go snippets and explain unfamiliar terms. Present one consequential
