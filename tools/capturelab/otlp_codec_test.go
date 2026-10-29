@@ -62,7 +62,10 @@ func decodeOTLPJSON(b []byte) (*tracepb.TracesData, error) {
 }
 
 func validateOTLPMessage(m protoreflect.Message, depth int, budget *int) error {
-	if depth > otlpJSONDepth || *budget <= 0 {
+	// Nil repeated messages and selected oneof arms with nil message pointers
+	// are malformed Go graphs. Clone/ProtoJSON can turn them into empty shells;
+	// refuse before either operation can erase that distinction.
+	if !m.IsValid() || depth > otlpJSONDepth || *budget <= 0 {
 		return errInvalid
 	}
 	// ProtoJSON drops these bytes. Check every message, including nested
