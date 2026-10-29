@@ -19,8 +19,11 @@ experiment only, equal means exactly equal bytes. The agreed production rule is
 to compare defined metadata fields by their typed values and captured request and
 response bytes exactly. Outer transport JSON field order and spacing must not
 create a conflict; formatting differences within captured bytes still matter.
-The field schema, identity validation and deterministic record encoding need a
-separate checkpoint. The coordinator does not parse or normalize transport JSON.
+Trace and span keys are fixed-size nonzero binary OpenTelemetry IDs; project
+identifiers remain opaque bounded strings. Validation precedes authorization and
+storage access. The metadata field schema, full semantic validation and deterministic
+record encoding need a separate checkpoint. The coordinator does not parse or
+normalize transport JSON or check opaque contents against the supplied key yet.
 
 Separate authorization methods approve a writer for the exact execution or an
 explicit project reader before storage access. Tests supply controlled principals;

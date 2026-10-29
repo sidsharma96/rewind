@@ -187,8 +187,12 @@ are explicitly qualified. An explicit installer creates that new owned schema
 and its tables in one transaction; no implicit
 creation, destructive migration or reuse of unrelated application tables. The
 first operation needs project gates, runs, exact creator grants and immutable
-bindings only. Persist bounded opaque IDs as bytea, preserving exact bytes and
-avoiding text collation or UTF-8 normalization. Use explicit phase labels and
+bindings only. Persist IDs as bytea, preserving exact bytes and avoiding text
+collation or UTF-8 normalization. Trace IDs are exactly 16 bytes and span IDs
+exactly 8 bytes, with at least one nonzero byte in each ID.
+The fresh-schema installer enforces these widths and rejects all-zero values;
+it does not migrate existing schemas. Other IDs remain bounded opaque bytes.
+Use explicit phase labels and
 validated completion/deadline pairs rather than storing a Go enum's ordinal.
 
 Registration follows the shared-gate/unique-insert/locked-read sequence above.
