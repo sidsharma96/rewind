@@ -414,7 +414,7 @@ This policy applies only to numbers in those two known fields. Unknown protobuf
 wire fields still fail before JSON encoding, because that path would lose them;
 unknown saved-JSON fields and new record kinds remain refused by their own checks.
 It grants no permission, completion proof or exception to any other validation.
-It does not select a flags policy or a public saved format.
+The separate flags policy below does not select a public saved format.
 
 As inspected in October 2026, protobuf-go v1.36.12's
 [`unmarshalEnum`](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/encoding/protojson/decode.go#L498-L522)
@@ -449,6 +449,66 @@ do not bypass unknown-wire refusal. A property fuzzer varies both signed 32-bit
 values through ordering/encoding/decoding. These are representation and refusal
 checks; no full admission, consumer-safety, performance or remote-durability result
 follows.
+
+## Span and link flags
+
+Preserve the exact unsigned 32-bit `Span.Flags` and each `Span_Link.Flags` received
+as metadata. Unknown bits remain uninterpreted evidence; do not clear them, narrow
+the whole value to a byte or refuse a record solely because a bit is unfamiliar.
+Compare each complete value for eventual retry equality. For example, `0x80000001`
+and `1` both have the sampled bit set but are different recorded flags. This is a
+Rewind content rule, not an OTLP definition of retry identity.
+
+Future consumers interpret documented bits with masks while retaining the original
+value. Read bit 0 for sampling; unknown high bits must not make that result true.
+For parent/link remoteness, the bit-8 known marker gates interpretation of bit 9:
+without the known marker, remoteness is unknown. Span flags describe the parent
+context's remoteness; link flags describe the linked context. Do not interpret an
+unfamiliar bit as a category, success, completion, ownership or permission. This
+contract covers preservation, not every flag combination's semantic validity, a
+new-span constructor or implemented consumers.
+
+The existing lab ordering and JSON codec already retain uint32 values. Maintained
+tests now cover 100 independent span/link pairs, inclusive zero/maximum and bit 31,
+unchanged inputs during encoding and decoding after source mutation. All 32
+single-bit changes to each field remain distinct in comparison projections. The
+paired decoder refuses negative, out-of-range, fractional or wrong-type flags
+without returning a partial result; positive controls include values above int32
+range. Unknown bits do not bypass unsupported-wire refusal on either message.
+`FuzzOTLPFlags` varies both uint32 fields against exact whole-message round trips.
+These checks are lab representation evidence; runtime typed admission, consumer
+interpretation, full equality/version rules and publication remain unimplemented.
+
+The simplest alternative refuses records containing unsupported flag bits. It
+limits the accepted domain and avoids normal storage writes for refused attempts,
+but loses other evidence and compatible forwarded flags. Preservation adds constant
+scalar work per field to the existing bounded metadata walks, with no sidecar,
+worker or extra object request. It still saves ordinary records that refusal would
+drop. Binary fixed32 holds four bytes; JSON decimal spelling can use more digits.
+No latency, allocation or throughput comparison between policies has been measured.
+The selected future different-bytes retry read and final authority/expiry/reference
+recheck remain required.
+
+Revisit if a required consumer cannot safely separate known flag interpretation
+from preserved unknown bits. Name the consumer, reproduce its failure and compare
+a safe adapter with narrower acceptance before changing this policy. The separate
+unknown-category and optional-message-presence checkpoints remain in force.
+
+As inspected in October 2026, the pinned OTLP
+[span flags definition](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/trace/v1/trace.proto#L106-L136)
+recommends copying equivalent forwarded flags as-is and tells readers not to assume
+high bits are zero; its [link flags](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/trace/v1/trace.proto#L270-L290)
+likewise warn readers not to assume those bits are zero. These protocol statements
+support forwarding compatibility, not the whole Rewind acceptance protocol.
+Collector pdata v1.70.0's local JSON
+[writer](https://github.com/open-telemetry/opentelemetry-collector/blob/f532e15ef29b6ed7fefad2b23a0fefd27120ef9b/pdata/internal/generated_proto_span.go#L198-L200)
+and [reader](https://github.com/open-telemetry/opentelemetry-collector/blob/f532e15ef29b6ed7fefad2b23a0fefd27120ef9b/pdata/internal/generated_proto_span.go#L281-L282)
+carry the whole uint32 without a known-bit mask. This does not establish every
+Collector pipeline's behavior or downstream safety. By contrast, OpenTelemetry Go's
+[`buildSpanFlagsWith`](https://github.com/open-telemetry/opentelemetry-go/blob/983defdf55ffda64c2d3ddebcb85c5a5af2eb08a/exporters/otlp/otlptrace/internal/tracetransform/span.go#L179-L187)
+constructs fresh flags from byte-sized runtime trace flags and documented remoteness
+markers. That creation workload does not justify erasing high bits in received
+OTLP evidence; the protocol distinguishes creation from equivalent forwarding.
 
 ## Optional descriptive message comparison
 

@@ -112,6 +112,12 @@ safely expose an unknown category; bring that consumer and its concrete failure
 case to a decision checkpoint before changing acceptance. See
 `engineering/CAPTURE.md#numeric-kind-and-status-values` for the policy and limits.
 
+Preserve all 32 bits of received span and link flags and compare each complete
+value for retries. Consumers interpret only documented bits with masks; no unknown
+bit supplies meaning or authority. Revisit if a required consumer cannot safely
+separate known-bit interpretation from preserved unknown bits; show its concrete
+failure first. See `engineering/CAPTURE.md#span-and-link-flags`.
+
 For retry comparison only, absent and completely default Resource, Scope and Status
 messages are equivalent at their three span/context positions. Preserve original
 encoded presence; never generalize this to arbitrary nested messages or capture
