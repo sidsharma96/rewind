@@ -116,6 +116,70 @@ individual codec round trips for encodable selections. That is memory/format evi
 or remote durability evidence. Full semantic/equality rules,
 record framing/version and runtime codec integration remain open.
 
+## Explicit ended-span declaration
+
+The selected final-span path treats submission as the authorized producer's or
+scoped collector's explicit declaration that the operation has ended, including
+an ended failure. It does not infer completion from status, timestamps, embedded
+events, labels, registration or first arrival. It does not independently prove
+that remote work stopped. The accepted final record will retain that report;
+there is no prerequisite per-execution catalog completion transition. Existing
+owner/delegation, run-admission, delivery and retention checks remain necessary.
+A span's completion does not complete its run or start the run's delivery window.
+
+`Span.DeclareEnded() (EndedSpan, error)` implements the internal declaration step.
+It checks `Span.IDs()` and returns no declaration on missing/invalid execution
+identity, preserving those errors. All status values and reported timestamps are
+left unchanged; status support and remaining field validity are separate checks.
+The call itself makes the declaration. Neither `SpanAt`, `IDs`, `DurationNanos`
+nor reconstruction calls it implicitly. It does not call an SDK's `End` method.
+`EndedSpan` has private contents; its zero value has no declaration and `View`
+returns `ErrInvalid` with no partial span. A successful `View` returns the same
+borrowed read-only metadata and inline context. Callers keep that whole reachable
+graph stable while used. This is no immutable snapshot, ownership transfer,
+authenticated capability or complete validated record. No IDs are cached beside
+mutable metadata and no mandatory deep copy is introduced. The encoding lab takes
+a declaration, reconstructs its one-span packet, and produces independently owned
+bytes; a declaration does not bypass unknown-field or other encoder checks.
+Runtime acceptance still needs a bounded validated record/codec and authorization
+integration. The opaque `Store.Write` is unchanged and must remain internal.
+
+Declaration and view access use O(1) work/space, with fixed 24-byte identity checks
+in the declaration, no graph traversal, catalog/object request or persistent
+state. There is no throughput measurement. Tests cover explicit declaration with
+unset/OK/error status and unknown/reversed/equal/ordered times, zero-value refusal,
+invalid IDs returning no partial declaration, borrowed context, independent codec
+output and unsupported-field refusal after declaration. These are memory and
+encoding checks, not remote acceptance or host-loss evidence.
+
+### Research and alternative
+
+As inspected in October 2026, OpenTelemetry's
+[`End` and `OnEnd` contract](https://github.com/open-telemetry/opentelemetry-specification/blob/b4bb23c6f2a5e30d3b729cfc425531d4262a6afa/specification/trace/sdk.md#L979-L989)
+and Go [`recordingSpan.End`](https://github.com/open-telemetry/opentelemetry-go/blob/983defdf55ffda64c2d3ddebcb85c5a5af2eb08a/sdk/trace/span.go#L396-L475)
+provide local completion signaling before export, separately from error status.
+They do not establish receiver authentication or durable storage. Jaeger's
+[`storageExporter.pushTraces`](https://github.com/jaegertracing/jaeger/blob/2bef72022bbad6c692ac3aaf6c6a372c4b495b86/cmd/jaeger/internal/exporters/storageexporter/exporter.go#L52-L54)
+sanitizes trace data and calls its trace writer; this inspected boundary has no
+separate per-span completion operation. It is a trace-storage comparison, not a
+whole-system absence proof or a model for our timestamp/authorization policies.
+
+The credible alternative is authoritative execution-lifecycle state. Temporal's
+[`respondactivitytaskcompleted.Invoke`](https://github.com/temporalio/temporal/blob/b03650523460b098cbaacf97192fc45a0c48d995/service/history/api/respondactivitytaskcompleted/api.go#L54-L117)
+checks running state and attempt information and adds a completion event in a
+workflow update. Its
+[`AddActivityTaskCompletedEvent`](https://github.com/temporalio/temporal/blob/b03650523460b098cbaacf97192fc45a0c48d995/service/history/workflow/mutable_state_impl.go#L3656-L3699)
+includes the result and removes the pending activity when applying the event.
+That workload needs completion to advance orchestration. A completion transition
+can be published with the result; two client requests and a separately visible
+completed-without-result interval are not inherent costs of this alternative.
+It still consumes a worker's report rather than independently witnessing physical
+cessation. Rewind keeps final-span submission as a report because its current
+contract is storage and replay of evidence. Revisit authoritative per-execution
+transitions if the finished system must gate attempt eligibility, advance work or
+expose completion independently of final-span delivery. Independently identified
+lifecycle records remain a required future path under either choice.
+
 ## Reported timestamps and derived duration
 
 The selected policy keeps original span timestamps when end is before start,
