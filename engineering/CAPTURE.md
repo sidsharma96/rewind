@@ -336,8 +336,9 @@ protobuf wire bytes at every visited message before calling ProtoJSON. That incl
 resource/scope context, span, events, links, status, nested arrays and key/value
 values, not only the packet root. Refusal must preserve the original message and
 return no encoded bytes. Ordinary new attribute names remain supported: their keys
-are data inside known schema fields. Numeric enum values remain representable by
-the codec; semantic value validation is a separate contract.
+are data inside known schema fields. Numeric kind/status values follow the
+[preservation policy](#numeric-kind-and-status-values) below; remaining semantic
+validation is a separate contract.
 
 Default strict ProtoJSON decoding already refuses unknown JSON field names in the
 paired lab decoder; it must not enable `DiscardUnknown` for saved metadata. This
@@ -379,6 +380,74 @@ Pinned implementation references:
   `ProtoMarshaler` and `ProtoUnmarshaler`.
 - [Go SDK v1.47.0 internal codec](https://github.com/open-telemetry/opentelemetry-go/blob/v1.47.0/exporters/otlp/otlptrace/otlptracehttp/internal/otlpjson/export_trace_service_request.go),
   `MarshalExportTraceServiceRequest` and the parallel field mappings.
+
+## Numeric kind and status values
+
+Preserve the exact signed 32-bit numbers in `Span.Kind` and `Status.Code`, including
+numbers absent from the pinned enum definitions. They are uninterpreted evidence,
+not proof of a valid future category. Do not silently coerce them to INTERNAL, OK,
+ERROR or UNSET. Future viewers, category-dependent queries/aggregates and supported
+replay adapters must handle an explicit unknown case and report when the operation
+needs a meaning they cannot supply. In particular, `code != ERROR` must not imply
+success. This is a selected acceptance/consumer contract; the current implementation
+is test-lab encoding, not runtime validation, warning presentation or replay.
+
+Revisit this policy if a **required consumer cannot safely expose an unknown
+category**. At that integration checkpoint, name the consumer, show its concrete
+failure case, and compare safe explicit unknown handling with narrower acceptance
+before changing the policy. Do not silently broaden refusal or invent an ordinary
+category to make the consumer work. This remains an open integration risk until
+actual consumers are implemented and checked.
+
+The current codec retains these numbers through owned attribute ordering, JSON
+encoding and decoding. Signed 32-bit limits are inclusive. The paired decoder
+refuses out-of-range or non-integral numeric input and unsupported enum names, with
+no partial decoded message. A future input path must check range before narrowing
+instead of accepting a wrapped value. Known zero-valued kind UNSPECIFIED and status
+UNSET are distinct from arbitrary unknown numbers; their raw values stay unchanged.
+Optional-status presence and remaining default/equality rules are separate work.
+Different unknown numbers must remain different defined contents for eventual retry
+comparison; the production equality fallback is not implemented here.
+
+This policy applies only to numbers in those two known fields. Unknown protobuf
+wire fields still fail before JSON encoding, because that path would lose them;
+unknown saved-JSON fields and new record kinds remain refused by their own checks.
+It grants no permission, completion proof or exception to any other validation.
+It does not select a flags policy or a public saved format.
+
+As inspected in October 2026, protobuf-go v1.36.12's
+[`unmarshalEnum`](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/encoding/protojson/decode.go#L498-L522)
+accepts a numeric token in signed 32-bit range without requiring enum membership,
+and its [encoder](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/encoding/protojson/encode.go#L327-L336)
+writes unknown values numerically. Collector pdata v1.70.0's
+[`ReadEnumValue`](https://github.com/open-telemetry/opentelemetry-collector/blob/f532e15ef29b6ed7fefad2b23a0fefd27120ef9b/pdata/internal/json/iterator.go#L213-L231)
+also reads numeric values directly; its
+[status codec](https://github.com/open-telemetry/opentelemetry-collector/blob/f532e15ef29b6ed7fefad2b23a0fefd27120ef9b/pdata/internal/generated_proto_status.go#L135-L149)
+writes them numerically. These support representation/forwarding, not validity of
+unknown categories or safe interpretation by all downstream consumers. Collector's
+[`StatusCode.String`](https://github.com/open-telemetry/opentelemetry-collector/blob/f532e15ef29b6ed7fefad2b23a0fefd27120ef9b/pdata/ptrace/status_code.go#L20-L30)
+returns empty text for unknown values, illustrating why a familiar label cannot
+be assumed. The OTLP [enum definitions](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/trace/v1/trace.proto#L153-L178)
+give zero kind a defined meaning; that does not define a meaning for number 99.
+
+The simplest alternative refuses an entire final span if either number is unknown.
+It limits accepted categories and avoids ordinary storage writes for that refused
+attempt, but can discard useful metadata under version skew or instrumentation
+bugs. Preservation uses the normal accepted-record path without an enum sidecar or
+extra metadata lookup. It does not promise the same total I/O as early refusal.
+Both strategies need bounded scalar checks; neither has a measured throughput
+advantage here. Codec costs remain linear in bounded metadata size with no new
+workers, catalog operations or recovery state in the lab.
+
+`otlp_enum_test.go` checks known zero, ordinary known values, unknown 99, negatives,
+both signed boundaries and a pair of unknowns. Whole-message comparison against a
+pre-encoding clone checks numeric fidelity, context and input nonmutation. Decoding
+after original-message mutation checks independent encoded output. Negative controls
+cover overflow, fractional input, unsupported names and wrong types. Unknown numbers
+do not bypass unknown-wire refusal. A property fuzzer varies both signed 32-bit
+values through ordering/encoding/decoding. These are representation and refusal
+checks; no full admission, consumer-safety, performance or remote-durability result
+follows.
 
 ## Compatibility references and required checks
 

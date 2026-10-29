@@ -105,6 +105,13 @@ execution and independent event identities; do not overwrite final spans with
 start/progress updates. Registration is not a durable progress event. See
 `engineering/ARCHITECTURE.md` for unimplemented lifecycle guarantees.
 
+Preserve unknown signed 32-bit numbers in span kind and status as uninterpreted
+evidence. Consumers must expose an explicit unknown case, never silently map them
+to success, unset or internal. Revisit this policy if a required consumer cannot
+safely expose an unknown category; bring that consumer and its concrete failure
+case to a decision checkpoint before changing acceptance. See
+`engineering/CAPTURE.md#numeric-kind-and-status-values` for the policy and limits.
+
 ## Independent review
 
 Read `agents/REVIEW.md`. Use the local Claude Code `code-reviewer` for coherent

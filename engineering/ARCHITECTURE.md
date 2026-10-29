@@ -128,8 +128,14 @@ checks that boundary. The selected serializer direction is a narrow adapter arou
 a parallel handwritten metadata schema or Collector data model. The maintained lab
 exercises that boundary before acceptance integration. The selected internal-record
 policy refuses unsupported metadata rather than discard it: unknown protobuf wire
-fields anywhere in the metadata must fail before JSON encoding. OTLP JSON transport
-compatibility remains a separate adapter responsibility. Attribute ordering will normalize exclusively owned messages in place; caller-owned
+fields anywhere in the metadata must fail before JSON encoding. Known kind/status
+fields preserve unknown signed 32-bit enum numbers without inventing their meaning;
+consumers must handle an explicit unknown category. Revisit this policy if a required
+consumer cannot safely expose an unknown category, using its concrete failure case
+before changing acceptance. The [numeric-value contract](CAPTURE.md#numeric-kind-and-status-values)
+records that integration checkpoint. Lab round-trip, refusal and property tests
+cover representation; runtime admission and consumers remain unimplemented. OTLP JSON
+transport compatibility remains a separate adapter responsibility. Attribute ordering will normalize exclusively owned messages in place; caller-owned
 messages require an explicit copy first. The [ordering direction](CAPTURE.md#owned-attribute-ordering)
 preserves sequence order and keeps the encoder non-mutating. Repeated attribute
 keys, including identical values and nested map keys, are refused before sorting

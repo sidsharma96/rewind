@@ -16,8 +16,10 @@ import (
 
 // This is the selected serializer direction exercised in the test lab, not a
 // production saved format or OTLP receiver. Unsupported internal wire fields are
-// refused. Admission, semantic validation, normalization, versions and logical
-// retry equality remain separate contracts.
+// refused. Numeric kind/status enum values are preserved even when unknown;
+// their interpretation needs an explicit unknown case in future consumers.
+// Admission, remaining semantic validation, versions and logical retry equality
+// remain separate contracts.
 // Callers own messages exclusively during encoding. All results are owned copies.
 const otlpJSONDepth = 64 // Experimental bound, not a production default.
 
