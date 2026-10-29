@@ -156,7 +156,11 @@ an internal one-span association operation before codec integration. For retry
 comparison only, absent and completely default Resource, Scope and Status messages
 are equivalent at those three positions; original encoded presence stays intact.
 The [comparison projection](CAPTURE.md#optional-descriptive-message-comparison)
-is exercised in the lab. Other fields and schema URLs remain evidence. Revisit if a
+remains the copying test oracle. The selected
+[direct comparison](CAPTURE.md#direct-metadata-comparison) checks both bounded,
+supported, attribute-ordered span views before comparing without copying their
+contents. It is exercised in the lab, with stable borrowed inputs and explicit
+errors; runtime retry resolution remains unimplemented. Other fields and schema URLs remain evidence. Revisit if a
 required consumer needs empty-shell presence itself to affect retry-content identity.
 Full saved schema, remaining normalization, semantic validation and version/equality rules
 remain open.

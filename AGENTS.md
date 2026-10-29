@@ -130,6 +130,16 @@ encoded presence; never generalize this to arbitrary nested messages or capture
 bodies. Revisit if a required consumer needs empty-shell presence itself to affect
 retry-content identity. See `engineering/CAPTURE.md#optional-descriptive-message-comparison`.
 
+Compare prepared span metadata directly, read-only, retaining the copying projection
+as an independent test oracle. The checked lab operation must bound and validate
+both complete graphs, refuse unknown wire fields and require ordered attributes
+before returning equal or different. Errors are neither equality nor conflicts.
+Keep every reachable input stable for the whole call; never normalize borrowed
+messages during comparison. Bind special Status handling to its named descriptor
+and keep schema coverage and oracle fuzzing. Runtime retry integration and the full
+saved-version/body contract remain separate. See
+`engineering/CAPTURE.md#direct-metadata-comparison`.
+
 ## Independent review
 
 Read `agents/REVIEW.md`. Use the local Claude Code `code-reviewer` for coherent
