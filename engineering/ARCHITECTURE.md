@@ -142,8 +142,13 @@ keys, including identical values and nested map keys, are refused before sorting
 or encoding; separate collections may reuse keys. Each logical span record includes
 its resource, scope and both schema URLs directly; do not add shared-context object
 references. The [span context direction](CAPTURE.md#one-span-with-its-context) defines
-an internal one-span association operation before codec integration. Full saved
-schema, remaining normalization, semantic validation and version/equality rules
+an internal one-span association operation before codec integration. For retry
+comparison only, absent and completely default Resource, Scope and Status messages
+are equivalent at those three positions; original encoded presence stays intact.
+The [comparison projection](CAPTURE.md#optional-descriptive-message-comparison)
+is exercised in the lab. Other fields and schema URLs remain evidence. Revisit if a
+required consumer needs empty-shell presence itself to affect retry-content identity.
+Full saved schema, remaining normalization, semantic validation and version/equality rules
 remain open.
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)

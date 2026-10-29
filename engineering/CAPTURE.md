@@ -405,7 +405,8 @@ refuses out-of-range or non-integral numeric input and unsupported enum names, w
 no partial decoded message. A future input path must check range before narrowing
 instead of accepting a wrapped value. Known zero-valued kind UNSPECIFIED and status
 UNSET are distinct from arbitrary unknown numbers; their raw values stay unchanged.
-Optional-status presence and remaining default/equality rules are separate work.
+Optional-status presence follows the comparison-only rule below; remaining
+default/equality rules are separate work.
 Different unknown numbers must remain different defined contents for eventual retry
 comparison; the production equality fallback is not implemented here.
 
@@ -448,6 +449,77 @@ do not bypass unknown-wire refusal. A property fuzzer varies both signed 32-bit
 values through ordering/encoding/decoding. These are representation and refusal
 checks; no full admission, consumer-safety, performance or remote-durability result
 follows.
+
+## Optional descriptive message comparison
+
+For retry-content comparison only, an absent Resource, InstrumentationScope or
+Status is equivalent to a present completely default-valued message at that same
+position in one span and its context. This is a narrow Rewind equality rule, not
+a rule to erase all empty messages. Preserve the original accepted encoding and
+its presence information; an equivalent retry must retain the original reference,
+attribution and deadlines. Never mutate a borrowed source graph for comparison.
+
+All supported fields must be default: a scope with an empty name but a version,
+attribute or dropped count is not empty. Resource attributes, dropped counts and
+entity references remain evidence. Status message text, nonzero known codes and
+unknown signed codes remain different contents. Both grouping schema URLs compare
+independently. Missing span metadata or invalid execution IDs cannot become an
+empty valid span. Kind zero is not rewritten to INTERNAL. AnyValue alternatives,
+array/event/link order and missing versus present zero-byte bodies retain their
+separate rules. Unsupported wire fields are refused before projection, not erased.
+
+The maintained `spanComparisonProjection` lab baseline reconstructs a one-span
+packet, validates the borrowed graph before `proto.Clone`, orders attributes in the
+owned clone, then fills only those three missing positions. The shared guard also
+refuses invalid reflective messages: nil entries in repeated message lists and
+selected message-valued oneof arms with nil pointers can otherwise turn into empty
+messages during copying/serialization. Ordinary absent optional fields stay valid.
+This baseline is not a runtime equality API, semantic validator, saved codec or
+selection of all remaining equality/version rules. `proto.Equal` on projections
+is the scoped test oracle, not a frozen full-record contract.
+
+Tests exercise all eight presence forms and 64 paired comparisons, keeping each
+distinct encoding intact through decoding; negative controls preserve other fields
+and sequence order. Tests also cover source nonmutation, independent output,
+idempotence and refusal before copying cyclic, excessive, duplicate or unsupported
+graphs. The fuzzer varies presence masks and every signed 32-bit status code against
+the simple rule that only zero equals the default status. These are local bounded
+representation checks, not acceptance/recovery or consumer-safety evidence.
+
+For metadata size M, the traversal/copy/comparison work takes O(M) time and O(M)
+transient space at this baseline. Existing uniqueness checks add expected hashing
+costs, with their hash-collision worst-case limitation; keyed attribute sorting adds
+the sum of O(k log k) comparison costs and key-byte reads. Bounds count graph visits,
+including shared descendants. Copies may repeat
+shared subgraphs; this is not a peak-memory cap or a measured performance result.
+There is no I/O, persistent sidecar or catalog operation in the lab. The future
+different-bytes fallback still needs its already-selected bounded accepted-object
+read outside catalog locks and final authority/expiry/reference recheck. A runtime
+comparison need not copy whole graphs just because this baseline does.
+
+The credible alternative keeps presence as retry content and uses structural
+comparison after attribute ordering. That retains an empty-shell declaration as a
+conflict but also conflicts on serializer-shape changes that convey the same default
+facts. We choose the narrow equivalence because these three messages can convey
+no additional information when all their fields are default. Revisit if a required
+consumer needs empty-shell presence itself to affect retry-content identity; name
+that consumer and its concrete failure before changing the rule. The independent
+unknown-category consumer checkpoint remains in force.
+
+As inspected in October 2026, the pinned OTLP
+[Status definition](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/trace/v1/trace.proto#L301-L303)
+assigns absent status the UNSET meaning, and its
+[group definitions](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/trace/v1/trace.proto#L48-L83)
+describe absent scope as an empty unknown name and absent resource as no known
+resource information. Resource empty-equivalence is our inference, not an OTLP
+global equality guarantee. The SDK's resource-grouping
+[`Resource.Equal`](https://github.com/open-telemetry/opentelemetry-go/blob/983defdf55ffda64c2d3ddebcb85c5a5af2eb08a/sdk/resource/resource.go#L161-L173)
+also treats nil as empty, but ignores schema URL differences; we cannot copy its
+whole identity rule for saved evidence. Protobuf-go's structural
+[`proto.Equal`](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/proto/equal.go#L14-L41)
+distinguishes nil from present empty messages without OTLP semantics. These systems
+support the distinction between representation and meaning; they do not implement
+Rewind's immutable retry protocol.
 
 ## Compatibility references and required checks
 

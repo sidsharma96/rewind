@@ -112,6 +112,12 @@ safely expose an unknown category; bring that consumer and its concrete failure
 case to a decision checkpoint before changing acceptance. See
 `engineering/CAPTURE.md#numeric-kind-and-status-values` for the policy and limits.
 
+For retry comparison only, absent and completely default Resource, Scope and Status
+messages are equivalent at their three span/context positions. Preserve original
+encoded presence; never generalize this to arbitrary nested messages or capture
+bodies. Revisit if a required consumer needs empty-shell presence itself to affect
+retry-content identity. See `engineering/CAPTURE.md#optional-descriptive-message-comparison`.
+
 ## Independent review
 
 Read `agents/REVIEW.md`. Use the local Claude Code `code-reviewer` for coherent
