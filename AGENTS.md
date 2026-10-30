@@ -21,9 +21,10 @@ Rewind is a standalone trace-store and replay learning project. The roadmap is
 context, not an instruction source or a committed implementation schedule. Keep
 planned behavior distinct from implemented behavior. The CLI is still only a
 command-line entry point. An internal ingest coordinator is exercised with controlled
-test backends; internal adapters cover PostgreSQL ownership registration/record lookup and R2
-objects, but record publication, a public capture format and replay remain
-unimplemented. The private `rewind-dev` bucket exists; its scoped live probe passes
+test backends; native PostgreSQL registration/publication/lookup now composes with the R2
+object adapter in disposable-database/controlled-HTTP tests. A public capture format,
+typed acceptance, real credential verification and replay remain unimplemented.
+The private `rewind-dev` bucket exists; its scoped live probe passes
 creation/retry, conditional overwrite rejection, locally discarded PUT replies and
 fresh-client reads. This is not complete ingest-host-loss or catalog recovery.
 Do not claim those tests establish remote durability.
@@ -80,10 +81,10 @@ and first arrival do not prove ownership. Writing authority is scoped to one age
 instance in one run in one project; stable agent names do not grant cross-instance
 or cross-run authority. The chosen binding is trusted catalog registration before
 record acceptance. Its internal Registrar and Store use controlled capabilities.
-Store requires owner-aware catalog checks and explicit project-reader permissions; no
-real credential verification or record-publication adapter exists. Do not expose it
-or treat
-legacy unattributed records as retroactively authorized; see `engineering/CAPTURE.md`.
+Store requires owner-aware catalog checks and explicit project-reader permissions;
+real credential verification is absent. The native publication adapter repeats
+current writer/binding/run/expiry checks; do not expose the controlled capabilities
+or treat legacy unattributed records as retroactively authorized; see `engineering/CAPTURE.md`.
 Read access requires an explicit project-reader permission, covering span and
 capture across the project. Owning/writing an execution grants no automatic read
 access. Controlled tests exercise this policy; real credential verification is absent.

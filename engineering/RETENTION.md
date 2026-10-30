@@ -61,7 +61,7 @@ marker deadline is unchanged, and protection does not outlive identity removal.
 The local value and controlled tests exercise this transition. Native Lookup reads
 trusted seeded records and commits expiry with one exclusive restart after its
 shared read. SQL tests exercise expiry update/commit failure and fresh-pool reads;
-native record publication and automatic cleanup remain unimplemented. The simplest
+native record writes now save the same expiry flag; automatic cleanup remains unimplemented. The simplest
 alternative, comparing only the current clock with expiry on every request, permits
 revival after a backward correction and was not selected.
 
@@ -97,7 +97,8 @@ retention duration: another host's clock or changed policy must not invalidate a
 original receipt. This is an internal result contract, not an HTTP/OTLP encoding,
 public record schema or autonomous expiry service. Controlled tests supply a catalog
 clock and preserve original times. Native SQL Lookup stores expiry on trusted
-seeded records; ordinary record publication remains future work.
+seeded records and native publication tests. Record writes now use the same saved
+expiry and original receipt deadlines.
 
 `DefaultPayloadRetention` supplies the seven-day policy constant. A future catalog
 can derive `acceptedAt.Add(payloadRetention)` and pass that expiry plus its marker

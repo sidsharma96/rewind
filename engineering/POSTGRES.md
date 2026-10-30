@@ -1,7 +1,7 @@
 # PostgreSQL catalog coordination
 
 Status: ownership registration and record Lookup have an internal native-pgx
-PostgreSQL adapter. Record CheckWrite/Publish still use controlled backends; there is no public
+PostgreSQL adapter, including CheckWrite/Publish. There is no public
 endpoint or real credential verification. R2 objects have a separate adapter,
 with a private development bucket and a passing scoped write/retry/read probe. The first
 native integration tests use disposable PostgreSQL, not a remotely deployed
@@ -68,14 +68,13 @@ Counts may not exceed `9223372036854775`, the whole-microsecond range that conve
 into a positive Go duration without overflow. This is an encoding bound, not a
 service retention limit or a captured-timestamp format.
 
-Policy writes must take the project gate exclusively. Record publication will
-read policy after its shared gate is acquired and preserve that view until
+Policy writes must take the project gate exclusively. Record publication reads policy after its shared gate is acquired and preserve that view until
 commit. The same lock therefore orders permission and policy changes with
 acceptance. A policy update does not rewrite original receipts or markers. A
 lookup or retry must use saved deadlines rather than today's project policy.
 Native PostgreSQL tests validate schema storage and coordination using trusted SQL test
-setup only; record publication and an authenticated policy-control path remain
-unimplemented. There is no schema migration or automatic expiry worker.
+setup. Publication reads this policy for new records; an authenticated policy-control
+path remains unimplemented. There is no schema migration or automatic expiry worker.
 
 ## Confirmed record expiry needs a commit
 
@@ -96,18 +95,18 @@ attempts must deny the second attempt before exposing state or changing expiry.
 Failed rollback prevents restart; failed or uncertain commit is an operational
 error, never a confirmed expiry. A shared live read need not repeat exclusively.
 
-The adapter implements Lookup, with required reader grants and saved
-record metadata in fresh schemas. Catalog still cannot satisfy ingest.Catalog
-until CheckWrite/Publish are implemented; Store cannot receive a partially protected
-adapter. Trusted SQL tests seed accepted records; ordinary Lookup cannot register
-owners or create accepted records. This is not an acceptance or recovery protocol.
+The adapter implements the complete internal ingest.Catalog capability alongside
+ownership registration. Lookup still cannot register owners or create accepted
+records. Native publication uses current writer grants and the same registered
+bindings; composed tests save through Store rather than seed accepted rows.
+Real credential verification and remote catalog deployment remain absent.
 Persist kinds as explicit span/capture labels, digests as 32 bytes, size as a checked
 nonnegative bigint, bounded opaque owner/submitter IDs as bytea, and original catalog
 acceptance/expiry/marker instants as finite timestamptz values with increasing
 order. These catalog-owned clock values have PostgreSQL microsecond precision,
 like run deadlines; they do not encode or reduce precision of captured span times.
 A boolean remembers expiry; original receipts and both deadlines stay fixed.
-Publication must later choose these times once from trusted policy under its locks.
+Publication chooses these times once from trusted policy under its locks.
 
 ## First registration has no row to lock
 
@@ -159,13 +158,13 @@ still extend apparent eligibility. This does not supply monotonic or failover ti
 The internal RunAdmission value now has an explicit elapsed-closed state and a
 CloseElapsed transition; controlled tests save that value and then move supplied
 time backward. The registration adapter persists elapsed closure on an authorized registration
-attempt that observes the original completed deadline. Record-side enforcement
-and an autonomous lifecycle controller remain unimplemented.
+attempt that observes the original completed deadline. Record writes now enforce the same saved state; an autonomous lifecycle controller
+remains unimplemented.
 The SQL adapter must end the ordinary shared-gate transaction without acceptance,
 then acquire the project gate exclusively in a separate policy transaction, verify
 the same original completion/deadline and persist closure. Never upgrade a shared
 lock in place. Closure is established only after that commit is confirmed; earlier
-ordered decisions are not undone. Persistent timestamp encoding and record-retention plumbing still need work. Eligibility is decided with a
+ordered decisions are not undone. Persistent timestamp encoding and per-record retention use the native schema. Eligibility is decided with a
 fresh database time under the acquired locks; an eligible transaction may finish
 committing after the deadline. Success still requires confirmed commit. The
 deadline does not promise that the final disk flush finishes before a wall-clock
@@ -177,9 +176,8 @@ duration is an automatic cleanup mechanism. This does not establish remote durab
 ## First native operation
 
 The concrete `internal/catalog` package uses native pgxpool and implements
-`ingest.OwnershipCatalog` and a protected record Lookup; record
-CheckWrite/Publish remain on controlled backends until a later slice. This
-does not give Store a partially protected PostgreSQL path. There is no public
+`ingest.OwnershipCatalog` and all three protected ingest.Catalog operations. Store
+can use the same native catalog for preliminary checks, publication and reads. There is no public
 endpoint or real credential verification.
 
 The caller owns the pool and supplies a trusted schema name; query table names
@@ -222,6 +220,42 @@ original registrar preservation, current grants after waiting, remembered closur
 failure/cancellation and pool replacement. Observe lock waits with database blocker
 state, not sleeps. A local PostgreSQL restart is not ingest-machine-loss evidence,
 and no registration-only test establishes R2 durability or trace lookup.
+
+## Native record publication
+
+The fresh schema adds writer_grants keyed by project/run/instance/principal,
+matching the existing controlled writer capability. The run must already exist;
+trusted service setup uses the exclusive project gate. These grants permit record
+submission for that owner, not reading. The binding still must name that exact
+owner; no record operation creates one. No credential or grant-control API exists.
+
+CheckWrite and Publish share the same protected write decision. Each holds one
+admission slot and deadline across the ordinary transaction and any separate
+elapsed-closure save. They lock the project gate shared, query current writer
+grants, lock the existing binding exclusively, check owner/run and query fresh
+time. They examine records only after those authority checks. An absent record
+is allowed at CheckWrite without reserving anything. Publish inserts the reference,
+original attribution and policy-derived times together. Exact-reference retries
+return the original receipt; differing references conflict without replacement.
+The coordinator still compares opaque bytes here. The selected decoded logical
+fallback and typed saved format remain separate work.
+
+A saved/newly observed expired record is refused only after commit. Run closure
+uses the existing separate exclusive-gate transaction after ordinary rollback;
+no shared lock is upgraded. Statement, commit or closure failures remain
+operational errors, never confirmed refusal. No object I/O occurs under SQL locks.
+
+Native tests cover independent span/capture records, duplicate/conflict races,
+original receipts across principal/policy changes, denied state disclosure, bounded
+waiting with fresh grant checks, saved expiry/closure and failed statement/deferred
+commit triggers. The composed path drives real Store, native registration and
+catalog operations, and the actual SDK/object adapter against a controlled HTTP
+peer. A discarded successful publication reply is followed by a fresh pool/store/
+client read and identical retry; conflicting bytes preserve the original, and
+removing a grant during upload prevents final publication. The test uses synthetic
+span JSON as opaque payload, not a selected saved format. Its in-memory object
+peer, live original process and local database do not establish remote durability,
+network-COMMIT ambiguity, catalog failover or complete ingest-host replacement.
 
 ## Cost, alternative and evidence
 

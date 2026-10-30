@@ -2,9 +2,10 @@
 
 This describes agreed contracts and implementation boundaries. The CLI provides
 help/version only. The internal ingest coordinator runs against controlled test
-backends. Ownership registration and known-record lookup have a native-pgx PostgreSQL adapter and immutable
-objects have an AWS SDK v2 R2 adapter. Record publication, a public capture format and replay
-runtime remain unimplemented.
+backends. Ownership registration, record publication and known-record lookup have a native-pgx
+PostgreSQL adapter; immutable objects have an AWS SDK v2 R2 adapter. A composed
+PostgreSQL/controlled-HTTP test exercises saving, fresh reads and retries. A public
+capture format, typed acceptance and replay runtime remain unimplemented.
 Its tests model failures rather than establish remote durability.
 An internal ownership-registration coordinator shares its binding contract with
 owner-aware publication and explicit project-reader lookups. Controlled capabilities
@@ -201,12 +202,12 @@ The local Lifetime value and controlled catalog tests exercise this state transi
 including save failure and a saved transition whose reply is lost. Native Lookup
 now shares ordinary binding reads and restarts exclusively once to save newly
 observed expiry, rechecking permission and fresh state. SQL tests seed records
-through trusted setup; native record publication remains unimplemented. A false forward jump can expire early, and an
+through trusted setup; native writes now also save expiry before confirming it. A false forward jump can expire early, and an
 uncommitted observation gives no protection. Save receipts now carry original catalog-owned AcceptedAt and
 ExpiresAt instants. The coordinator validates their ordering and returns them
 unchanged on retries; controlled tests keep both with the original reference and
-attribution. SQL Lookup reads saved receipts from trusted setup; native publication and a public
-receipt encoding remain unimplemented. Rewind must enforce authenticated producer/execution ownership in
+attribution. Native publication chooses those times from project policy once,
+and SQL Lookup reads the same saved receipts. A public receipt encoding remains unimplemented. Rewind must enforce authenticated producer/execution ownership in
 the first working version, with writing authority scoped to one agent instance
 in one run in one project, as described in [the capture design](CAPTURE.md#producer-authority).
 Trusted catalog registration is the selected ownership binding. The local Registrar
@@ -227,7 +228,7 @@ enforce revocation. An explicit elapsed-closed value now preserves saved closure
 across supplied clock regression; once durably recorded, closure must not reopen.
 This cannot correct an unobserved clock jump and can retain an early closure caused
 by a false forward jump. The registration adapter now persists bindings and elapsed closure in PostgreSQL.
-Authenticated run-control operations, native record publication and general provider
+Authenticated run-control operations and general provider
 clock/failover guarantees remain unimplemented.
 Cleanup, real authentication/grant lifecycles and combined query semantics remain
 to be designed. Lookup can save expiry; no autonomous expiry worker or storage quota
@@ -259,8 +260,8 @@ execution binding lock: different calls in a project may proceed concurrently;
 the same call's mutations take turns. Permission and run-state changes acquire
 the project gate exclusively. Object I/O stays outside these transactions.
 The [PostgreSQL design](POSTGRES.md) specifies the lock order, first-registration
-race and failure boundaries. The registration slice implements this order; record-side SQL and throughput
-measurements remain future work.
+race and failure boundaries. Native registration, publication and lookup implement
+this order; throughput measurements remain future work.
 
 The publication sequence is bounded admission and authorization, a preliminary
 catalog lookup, complete remote batch/payload writes, catalog commit including

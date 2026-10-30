@@ -1,6 +1,5 @@
-// Package catalog supplies PostgreSQL ownership registration and record lookup.
-// It does not implement ingest.Catalog publication, credential verification, run
-// controls or object I/O.
+// Package catalog supplies PostgreSQL ownership registration and record publication/lookup.
+// It does not implement credential verification, run controls or object I/O.
 // The installed schema also stores each project's trusted retention policy.
 package catalog
 
