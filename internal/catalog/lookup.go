@@ -28,7 +28,7 @@ func recordKind(id ingest.Identity) (string, error) {
 // Live and already expired records use shared binding locks. A first expiry
 // discovery ends that transaction and restarts once with an exclusive binding lock
 // and fresh checks. One admission slot/deadline spans both attempts; no goroutines,
-// background retries or object requests are owned. This does not implement Publish.
+// background retries or object requests are owned. Publication uses the same bindings.
 func (c *Catalog) Lookup(ctx context.Context, id ingest.Identity, principal string) (ingest.Receipt, error) {
 	if _, err := recordKind(id); err != nil || !validID(principal) {
 		return ingest.Receipt{}, ingest.ErrInvalid

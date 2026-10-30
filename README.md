@@ -6,11 +6,12 @@ be implemented and measured explicitly.
 
 The CLI currently provides help and version output. An internal ingest coordinator
 exercises immutable writes, ownership and read permissions with controlled test
-backends. Internal adapters cover PostgreSQL ownership registration and immutable R2
-objects; record publication still uses controlled stores. These adapters are not
-yet joined into a remotely durable service. Real authentication, trace queries and replay are not implemented.
-The design requires remote durability before
-acknowledging accepted data and distinguishes recorded playback from running an external model again.
+backends. Internal adapters cover PostgreSQL ownership registration, record
+publication/lookup and immutable R2 objects; a local integration test composes them
+with a controlled object peer. They are not yet a remotely durable service. Real
+authentication, trace queries and replay are not implemented. The design requires
+remote durability before acknowledging accepted data and distinguishes recorded
+playback from running an external model again.
 
 ## Getting started
 

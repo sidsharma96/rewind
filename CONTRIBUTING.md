@@ -15,8 +15,8 @@ private/generated artifacts and oversized source files. `make race` runs the tes
 with Go's race detector. The optional hook checks the index and whitespace before
 a commit; installation refuses to replace an existing custom hook setting.
 
-PostgreSQL registration integration tests are opt-in. Use an explicitly disposable
-PostgreSQL database whose test role may create schemas, and set
+PostgreSQL registration, publication and lookup integration tests are opt-in. Use
+an explicitly disposable database whose test role may create schemas, and set
 `REWIND_TEST_POSTGRES` to its connection string before running:
 
 ```sh

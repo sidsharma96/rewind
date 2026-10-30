@@ -47,6 +47,14 @@ CREATE TABLE reader_grants (
     principal_id bytea NOT NULL CHECK (octet_length(principal_id) BETWEEN 1 AND 256),
     PRIMARY KEY (project, principal_id)
 );
+CREATE TABLE writer_grants (
+    project bytea NOT NULL,
+    run_id bytea NOT NULL,
+    instance_id bytea NOT NULL CHECK (octet_length(instance_id) BETWEEN 1 AND 256),
+    principal_id bytea NOT NULL CHECK (octet_length(principal_id) BETWEEN 1 AND 256),
+    PRIMARY KEY (project, run_id, instance_id, principal_id),
+    FOREIGN KEY (project, run_id) REFERENCES runs(project, run_id)
+);
 CREATE TABLE records (
     project bytea NOT NULL,
     trace_id bytea NOT NULL,

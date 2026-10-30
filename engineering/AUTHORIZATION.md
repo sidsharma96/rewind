@@ -2,9 +2,9 @@
 
 Status: implemented as internal coordination with controlled test capabilities. It exercises
 already selected producer ownership and explicit project-reader rules. Native
-PostgreSQL Lookup now checks an exact project-reader grant and validates saved
-record ownership. Accepted rows are seeded by trusted tests; record publication
-still uses controlled backends. No credential format, grant lifecycle or endpoint
+PostgreSQL CheckWrite/Publish now repeat current writer, binding and run checks;
+Lookup checks an exact project-reader grant and saved ownership. The composed
+coordinator test publishes real SQL rows against a controlled object peer. No credential format, grant lifecycle or endpoint
 is selected here.
 
 Alice owns call 42. A trusted host registers its tenant/trace/span to Alice's
@@ -173,8 +173,8 @@ save that value; CheckRecord alone remains a pure predicate and changes no state
 Completion/closure retries preserve closure and original timing. Revocation remains
 a distinct state. Controlled tests save closure, regress supplied time, replace
 coordinators and refuse record/registration retries while leaving reads intact.
-The registration adapter now persists observed elapsed closure in PostgreSQL.
-Record-side SQL and an autonomous lifecycle controller remain unimplemented. A false forward jump can
+Registration and record writes now persist observed elapsed closure in PostgreSQL.
+An autonomous lifecycle controller remains unimplemented. A false forward jump can
 close early; a backward jump before saved closure remains outside this protection.
 
 Confirmed `ErrDenied` from registration means refusal of this attempt, like a
@@ -234,4 +234,5 @@ submitter. Tests refuse legacy rows with missing attribution rather than inferri
 their history from a later registration.
 
 These experiments model trusted capabilities in one process. Real authentication,
-PostgreSQL transactions, R2 durability and trace enumeration remain absent.
+Native publication tests additionally exercise PostgreSQL transactions; live R2
+durability and trace enumeration remain outside these controlled checks.

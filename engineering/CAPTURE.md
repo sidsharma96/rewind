@@ -542,7 +542,7 @@ without returning a partial result; positive controls include values above int32
 range. Unknown bits do not bypass unsupported-wire refusal on either message.
 `FuzzOTLPFlags` varies both uint32 fields against exact whole-message round trips.
 These checks are lab representation evidence; runtime typed admission, consumer
-interpretation, full equality/version rules and publication remain unimplemented.
+interpretation, full equality/version rules and typed publication integration remain unimplemented.
 
 The simplest alternative refuses records containing unsupported flag bits. It
 limits the accepted domain and avoids normal storage writes for refused attempts,
@@ -904,7 +904,7 @@ delivery timing. Joined run-admission tests now close new registration and allow
 only authorized identical registration retries during the open window. Real
 authenticated lifecycle operations and general provider-clock guarantees remain
 absent. The registration adapter now persists bindings and elapsed closure; record
-publication still uses controlled backends; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
+publication now uses native owner-aware SQL alongside controlled tests; see [delayed delivery](AUTHORIZATION.md#run-completion-and-delayed-delivery).
 Real grant issuance, revocation propagation, delegation protocols and durable
 representation remain unresolved; no token format or new API is selected.
 
@@ -1003,10 +1003,11 @@ than acquiring history from a later binding. Real credential/grant lifetimes,
 admission quotas, binding retention and provider enforcement remain unresolved.
 The native registration adapter now persists bindings and checks creator grants
 and both run states in PostgreSQL; see [the SQL scope](POSTGRES.md#first-native-operation).
-The same adapter now reads trusted seeded record rows under exact project-reader
-grants and saves expiry when needed. It still has no Store publication implementation
-and must not be combined with an unrelated binding store and treated as enforced
-record acceptance.
+The same adapter now implements owner-aware CheckWrite and Publish, reads records
+under exact project-reader grants and saves expiry when needed. The composed local
+test joins that catalog to Store and the object SDK; real credential verification,
+remote catalog deployment and combined host-loss recovery remain absent. Do not
+substitute an unrelated binding store and treat it as enforced record acceptance.
 Its installer requires a new owned schema; it migrates no legacy dataset.
 
 
