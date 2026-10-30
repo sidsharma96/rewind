@@ -132,13 +132,13 @@ bodies. Revisit if a required consumer needs empty-shell presence itself to affe
 retry-content identity. See `engineering/CAPTURE.md#optional-descriptive-message-comparison`.
 
 Compare prepared span metadata directly, read-only, retaining the copying projection
-as an independent test oracle. The checked lab operation must bound and validate
+as an independent test oracle. The metadata codec operation must bound and validate
 both complete graphs, refuse unknown wire fields and require ordered attributes
 before returning equal or different. Errors are neither equality nor conflicts.
 Keep every reachable input stable for the whole call; never normalize borrowed
 messages during comparison. Bind special Status handling to its named descriptor
-and keep schema coverage and oracle fuzzing. Runtime retry integration and the full
-saved-version/body contract remain separate. See
+and keep schema coverage and oracle fuzzing. The lab delegates to `record.MetadataCodec` and retains the copying oracle.
+Runtime retry integration and the full saved-version/body contract remain separate. See
 `engineering/CAPTURE.md#direct-metadata-comparison`.
 
 Preserve every structurally supported received link, including an empty message,
@@ -150,6 +150,17 @@ The containing span still requires its own valid execution IDs and authorization
 A usable target key proves neither existence nor permission. Revisit if a required
 consumer cannot safely represent unavailable targets, using its concrete failure.
 See `engineering/CAPTURE.md#links-without-usable-targets`.
+
+The selected saved-object direction is a small common envelope carrying version,
+record kind and encoding, with kind-specific payloads. After object integrity
+verification, cross-check the declared kind against the authorized catalog's
+expected kind. Refuse unsupported versions/kinds and mismatches; never decode a
+future kind as a final span. The label grants no authority and cannot reconstruct
+acceptance. Header layout, production bounds and the runtime codec remain open;
+see `engineering/CAPTURE.md#saved-object-kind-discrimination`.
+Envelope record kind is separate from descriptive OTLP span kind, whose unknown
+numeric values must still be preserved under the policy above.
+
 
 ## Independent review
 

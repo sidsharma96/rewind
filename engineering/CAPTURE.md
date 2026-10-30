@@ -2,7 +2,7 @@
 
 Status: the user selected a small explicit Rewind capture path first, with an
 OpenTelemetry-compatible internal record and a later OTLP adapter. No public capture
-schema, saved format, receiver or record normalizer is implemented. The selected
+schema, saved format, receiver or complete record normalizer is implemented. The selected
 span-metadata model reuses OpenTelemetry's generated Go types, including resource,
 scope and typed attributes. Rewind owns validation, normalization, exact capture
 bodies, ownership and the saved format. The narrow JSON adapter below is selected;
@@ -17,7 +17,72 @@ An isolated [encoding experiment](CAPTURE-ENCODING.md) compares full JSON with
 JSON metadata and raw bodies, including compression. The user selected the hybrid
 layout from its results; its test-only codecs are not integrated with acceptance.
 
+## Saved-object kind discrimination
+
+Use a small common envelope carrying a format version, record kind and encoding
+marker. Each kind keeps its own payload schema. After verifying stored-object
+integrity, a reader must check the declared kind against the kind expected from
+the authorized catalog lookup before interpreting the payload. Refuse unsupported
+versions, unsupported kinds and kind mismatches explicitly; never try a new kind
+as a final span. The label is a cross-check, not a second authority for the record.
+It cannot prove ownership, event identity, acceptance or reconstruct the catalog.
+Envelope kind means span versus capture, not the span's descriptive OTLP kind such
+as CLIENT or INTERNAL. Unknown numbers in that metadata field still follow the
+separate preservation policy; refusing an unsupported record decoder changes none
+of those numeric-value rules.
+
+This selects explicit kind discrimination, not a frozen header layout, production
+limits, capture schema or public format. Span and capture remain independent
+records. Future lifecycle events need their separate identities and contracts;
+reserving the ability to distinguish them does not implement or accept them.
+No accepted object is rewritten by this decision. Runtime typed preparation,
+framing/decoding and logical retry resolution still need implementation.
+
+The simpler alternative supplies kind only from catalog/request context and uses
+separate typed decoders. That can be safe when every reader retains the correct
+context. We keep the label so decoding can cross-check that context and an object
+inspector can identify the payload type. Parsing a fixed bounded header has
+constant work and auxiliary space and adds no object or catalog request. Exact
+byte overhead and latency are unmeasured. Including kind in the bytes can prevent
+cross-kind reuse of otherwise identical payload objects; content equality never
+made span and capture the same event. Revisit a common envelope if concrete
+per-kind layouts or measured overhead justify separating formats, retaining
+explicit supported-kind dispatch under either design.
+
+As inspected in October 2026, Protobuf's
+[`Any` definition](https://github.com/protocolbuffers/protobuf/blob/a79f2d2e9fadd75e94f3fe40a0399bf0a5d90551/src/google/protobuf/any.proto#L128-L161)
+puts a type identifier beside serialized message bytes. Its workload is embedding
+heterogeneous protobuf messages; the mechanism supports explicit dispatch, not
+Rewind's exact-body layout or storage guarantees. We are not adopting `Any` or
+runtime schema fetching. OTLP's separately typed
+[`TraceService.Export`](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/collector/trace/v1/trace_service.proto#L27-L42)
+and
+[`LogsService.Export`](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/collector/logs/v1/logs_service.proto#L27-L42)
+illustrate the alternative: surrounding service context selects a message type.
+That is telemetry transport, not standalone persisted-object identification.
+Choosing the explicit label for Rewind is our inference from its multiple saved
+record kinds and inspection needs, not a requirement imposed by those projects.
+
 ## Two entrances to one acceptance path
+
+The selected metadata operations now live in one concrete `record.MetadataCodec`,
+configured with explicit positive byte, traversal-work and nesting limits. Its
+`Check`, `Encode`, `Decode`, `NormalizeOwned` and `Compare` operations keep the
+existing bounded guard, JSON adapter, keyed ordering and direct comparison rules.
+`Check` is a structural/representation guard, not complete semantic admission;
+`Decode` parses owned metadata and does not bypass later checking. The copying
+comparison remains a separate lab oracle. No default production limits, saved
+envelope implementation, public OTLP receiver or typed acceptance API follows from
+this move.
+
+The codec owns no connections, workers or mutable request state. Encoding and
+comparison borrow stable inputs; decoding returns an independent graph. Owned
+normalization checks the complete graph before changing attribute order and
+requires exclusive ownership of every descendant and backing array. Retaining
+callers explicitly clone before normalization. Errors remain errors, not evidence
+of a conflicting retry. The lab delegates these operations and retains its
+synthetic workload and independent oracles. The composed catalog test uses
+the codec for its synthetic payload and fresh read, while Store remains opaque.
 
 ```text
 Explicit Rewind capture -> decode ----+
@@ -114,7 +179,7 @@ entity references, then decodes them after original input mutation. A property
 fuzzer compares selected reconstruction against cloning/pruning the input, with
 individual codec round trips for encodable selections. That is memory/format evidence, not host-loss
 or remote durability evidence. Full semantic/equality rules,
-record framing/version and runtime codec integration remain open.
+record framing/version and runtime typed admission remain open.
 
 ## Explicit ended-span declaration
 
@@ -302,8 +367,8 @@ span IDs and parent span IDs between Base64 and hexadecimal; leave metadata
 generated schema instead of maintaining parallel structs for every field.
 This selects encoding conventions, not an OTLP endpoint or the complete saved record.
 
-The paired codec in `tools/capturelab/otlp_codec_test.go` implements conversion on
-bounded in-memory JSON fixtures. It preserves tested typed values and context, uses
+`record.MetadataCodec` in `internal/record/metadata_json.go` implements conversion.
+The lab delegates to it on bounded in-memory JSON fixtures. It preserves tested typed values and context, uses
 raw JSON fragments rather than floating-point maps, rejects duplicate keys before
 map conversion and checks nonempty ID lengths. Tests inspect exact output fields,
 compare an independently produced Collector JSON fixture, exercise malformed input
@@ -333,7 +398,7 @@ builds or confuse compact/sorted outer JSON with canonical logical contents: the
 selected retry strategy still needs its decoded comparison fallback.
 
 The selected internal-record policy refuses unsupported metadata before saving,
-rather than save only the known portion. The lab encoder checks unknown
+rather than save only the known portion. The metadata encoder checks unknown
 protobuf wire bytes at every visited message before calling ProtoJSON. That includes
 resource/scope context, span, events, links, status, nested arrays and key/value
 values, not only the packet root. Refusal must preserve the original message and
@@ -343,12 +408,12 @@ are data inside known schema fields. Numeric kind/status values follow the
 validation is a separate contract.
 
 Default strict ProtoJSON decoding already refuses unknown JSON field names in the
-paired lab decoder; it must not enable `DiscardUnknown` for saved metadata. This
+metadata decoder; it must not enable `DiscardUnknown` for saved metadata. This
 is different from OTLP JSON reception, whose standard requires ignoring unknown
 transport fields. A future adapter must document that projection and cannot claim
 the JSON saved record preserves every original transport field. No adapter or real
-record acceptance exists yet. The encoder returns the distinct lab error
-`errUnsupportedMetadata` for visited unknown wire metadata; public error mapping is not selected by that test helper.
+typed record acceptance exists yet. The encoder returns `record.ErrMetadataUnsupported`
+for visited unknown wire metadata; public error mapping remains unselected.
 `otlp_unknown_test.go` checks 25 message positions, direct injection and a real
 binary-protobuf parse, default JSON refusal and unchanged input. The raw ProtoJSON
 loss check remains the simple negative oracle; it is not a permitted save path.
@@ -481,7 +546,7 @@ Decoded output must survive source mutation. Nested checks cover resource, scope
 span, event and link attributes plus array/key/value positions; different types
 and malformed double input remain distinct or refused. A fuzzer varies two uint64
 patterns through codec and comparison against that bit-class oracle. These are
-bounded local checks, not a runtime comparator, complete semantic admission,
+bounded local checks of the metadata comparator, not complete semantic admission,
 consumer validation or remote durability evidence.
 
 The simplest alternative requires exact float bits as evidence and retry identity.
@@ -638,7 +703,7 @@ for the entire metadata path.
 ## Direct metadata comparison
 
 Compare stable, prepared span metadata directly without cloning its descendants.
-The maintained test-lab operation `compareSpanMetadata` takes two borrowed
+`record.MetadataCodec.Compare` takes two borrowed
 `record.Span` views and returns `(bool, error)`. It checks IDs, reconstructs only
 one-span wrappers, then runs the existing complete bounded recursive guard and a
 read-only attribute-order check for each input. Unknown fields, malformed pointers,
@@ -1064,7 +1129,7 @@ needs an explicit copy before that operation; a pointer alone does not transfer
 ownership. The existing encoder stays non-mutating. Do not remove the opaque
 Store's separate byte snapshot under this metadata decision.
 
-The test-only `normalizeOwnedOTLP` helper validates unknown fields and existing
+`record.MetadataCodec.NormalizeOwned` validates unknown fields and configured
 traversal bounds over the entire graph before any mutation, so refusal cannot
 leave a half-reordered message. A bounded second walk sorts only known keyed
 collections. This is not integrated with acceptance. Repeated keys within one
@@ -1074,9 +1139,9 @@ reusing a key in a different collection is allowed. Case-distinct keys remain
 distinct. The encoder must share this guard so callers cannot bypass it by skipping
 normalization. Parsing alone need not establish semantic validity.
 
-The lab check reuses the bounded read-only traversal. After a message's known
+The metadata guard reuses the bounded read-only traversal. After a message's known
 fields pass the existing budget/depth check, inspect its keyed collection with a
-local Go set (`map[string]struct{}`). A repeated key returns a distinct lab error,
+local Go set (`map[string]struct{}`). A repeated key returns `ErrDuplicateAttribute`,
 without including keys or values in the error text. No value comparison, winner
 rule or silent repair is needed. Strings are referenced, not copied. The set is
 local to one collection/check, with O(k) auxiliary entries and expected O(k) lookups
@@ -1088,7 +1153,8 @@ if bounded worst-case CPU becomes a requirement. Measure the selected checker on
 bounded fixtures; no caching, pooling or full metadata cloning is introduced.
 Other invalid semantic inputs remain outside the equivalence claim.
 
-The lab checks order with `slices.IsSortedFunc` before calling `slices.SortFunc`.
+The runtime ordering operation checks with `slices.IsSortedFunc` before calling
+`slices.SortFunc`; the lab retains the matched strategy experiment.
 Matched microbenchmarks cover direct sorting and check-then-sort on sorted,
 reversed, shuffled and nearly sorted lists, including long key prefixes. The check
 reduces fully sorted-list time in these samples but can slow nearly sorted lists;
@@ -1099,7 +1165,7 @@ separately described uniqueness check. String comparisons also
 read key bytes. In-place sorting avoids a full message clone but still uses stack
 space; it neither avoids decoding/encoding nor promises an allocation-free request.
 There are no object requests, transferred bytes, catalog locks or recovery effects
-in this lab operation. A failed later encoding publishes nothing. Revisit the
+in this metadata operation. A failed later encoding publishes nothing. Revisit the
 sort strategy if measured final workloads or the Go implementation change.
 
 The independent insertion-sort oracle checks all keyed container paths and nested

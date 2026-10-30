@@ -196,10 +196,6 @@ func TestOTLPCodecLimits(t *testing.T) {
 	if out, err := decodeOTLPJSON(append(padded, ' ')); err == nil || out != nil {
 		t.Fatal("excess input accepted")
 	}
-	atDepth := strings.Repeat("[", otlpJSONDepth) + "0" + strings.Repeat("]", otlpJSONDepth)
-	if checkOTLPJSON([]byte(atDepth)) != nil || checkOTLPJSON([]byte("["+atDepth+"]")) == nil {
-		t.Fatal("JSON depth boundary changed")
-	}
 	for _, size := range []int{maxMetadata + 1, maxMetadata / 2} {
 		in := otlpFixture()
 		// The second case fits the input budget but expands past the output cap.

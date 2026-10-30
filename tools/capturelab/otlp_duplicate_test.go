@@ -116,7 +116,7 @@ func FuzzOTLPRepeatedKeys(f *testing.F) {
 		}
 		before := proto.Clone(in)
 		duplicate := duplicateKeyOracle(span.Attributes)
-		check := validateUniqueAttributeKeys(span.Attributes)
+		check := metadataCodec.Check(in)
 		if errors.Is(check, errDuplicateAttribute) != duplicate || (check != nil && !duplicate) {
 			t.Fatal("key set disagrees with pairwise oracle")
 		}
@@ -129,37 +129,4 @@ func FuzzOTLPRepeatedKeys(f *testing.F) {
 			t.Fatal("normalizer disagrees with oracle or changed refused input")
 		}
 	})
-}
-
-func BenchmarkOTLPRepeatedKeys(b *testing.B) {
-	for _, n := range []int{8, 32, 128, 512} {
-		for _, shape := range []string{"sorted", "random", "first-repeat", "last-repeat"} {
-			for _, strategy := range []string{"set", "pairwise"} {
-				b.Run(fmt.Sprintf("%d/%s/%s", n, shape, strategy), func(b *testing.B) {
-					attrs := sortFixture(n, "random")
-					if shape == "sorted" {
-						attrs = sortFixture(n, "sorted")
-					}
-					if shape == "first-repeat" {
-						attrs[1] = attrs[0]
-					} else if shape == "last-repeat" {
-						attrs[n-1] = attrs[0]
-					}
-					expect := duplicateKeyOracle(attrs)
-					b.ReportAllocs()
-					for b.Loop() {
-						got := false
-						if strategy == "set" {
-							got = validateUniqueAttributeKeys(attrs) != nil
-						} else {
-							got = duplicateKeyOracle(attrs)
-						}
-						if got != expect {
-							b.Fatal("incorrect duplicate result")
-						}
-					}
-				})
-			}
-		}
-	}
 }

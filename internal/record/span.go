@@ -1,5 +1,6 @@
-// Package record associates generated span metadata with its inline context.
-// It does not authenticate, validate complete records, or define a saved codec.
+// Package record associates generated spans with inline context and provides
+// bounded metadata encoding, owned ordering and read-only comparison. It does not
+// authenticate, validate complete records, or define a complete saved format.
 package record
 
 import (
