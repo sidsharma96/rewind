@@ -162,6 +162,14 @@ supported, attribute-ordered span views before comparing without copying their
 contents. It is exercised in the lab, with stable borrowed inputs and explicit
 errors; runtime retry resolution remains unimplemented. Other fields and schema URLs remain evidence. Revisit if a
 required consumer needs empty-shell presence itself to affect retry-content identity.
+Links with absent or correctly sized all-zero target IDs retain their received
+evidence, including empty link messages; derive an explicit unavailable target.
+The internal `record.TargetOfLink` helper copies a key only for two nonzero IDs,
+and refuses wrong nonempty widths. A usable key grants no authority or guarantee
+of existence; the containing span's own IDs stay strict. The
+[link contract](CAPTURE.md#links-without-usable-targets) covers preservation, retry
+distinctions and the consumer integration checkpoint. Runtime typed admission,
+viewer navigation and replay integration remain unimplemented.
 Full saved schema, remaining normalization, semantic validation and version/equality rules
 remain open.
 The selected saved layout is hybrid: versioned framing, JSON

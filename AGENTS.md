@@ -140,6 +140,16 @@ and keep schema coverage and oracle fuzzing. Runtime retry integration and the f
 saved-version/body contract remain separate. See
 `engineering/CAPTURE.md#direct-metadata-comparison`.
 
+Preserve every structurally supported received link, including an empty message,
+when target IDs are absent or correctly sized but all zero. Derive an explicit
+no-usable-target result; never fabricate a target or discard the link. Refuse wrong
+nonempty ID widths. Preserve original target bytes, attributes, trace state, full
+flags, dropped counts and order for retries; absent and all-zero IDs stay distinct.
+The containing span still requires its own valid execution IDs and authorization.
+A usable target key proves neither existence nor permission. Revisit if a required
+consumer cannot safely represent unavailable targets, using its concrete failure.
+See `engineering/CAPTURE.md#links-without-usable-targets`.
+
 ## Independent review
 
 Read `agents/REVIEW.md`. Use the local Claude Code `code-reviewer` for coherent

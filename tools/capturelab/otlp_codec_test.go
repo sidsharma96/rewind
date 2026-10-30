@@ -9,6 +9,7 @@ import (
 	"io"
 	"unicode/utf8"
 
+	spanrecord "github.com/sidsharma96/rewind/internal/record"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -72,6 +73,14 @@ func validateOTLPMessage(m protoreflect.Message, depth int, budget *int) error {
 	// attribute values, without clearing, copying or interpreting the unknowns.
 	if len(m.GetUnknown()) != 0 {
 		return errUnsupportedMetadata
+	}
+	// Missing/zero target IDs are preserved evidence, but a wrong nonempty
+	// width is malformed. Check here as well as in the JSON adapter so direct
+	// comparison cannot turn malformed link IDs into equal/conflicting content.
+	if link, ok := m.Interface().(*tracepb.Span_Link); ok {
+		if _, _, err := spanrecord.TargetOfLink(link); err != nil {
+			return errInvalid
+		}
 	}
 	*budget -= 1
 	var err error
