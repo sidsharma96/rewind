@@ -575,6 +575,72 @@ constructs fresh flags from byte-sized runtime trace flags and documented remote
 markers. That creation workload does not justify erasing high bits in received
 OTLP evidence; the protocol distinguishes creation from equivalent forwarding.
 
+## Direct metadata comparison
+
+Compare stable, prepared span metadata directly without cloning its descendants.
+The maintained test-lab operation `compareSpanMetadata` takes two borrowed
+`record.Span` views and returns `(bool, error)`. It checks IDs, reconstructs only
+one-span wrappers, then runs the existing complete bounded recursive guard and a
+read-only attribute-order check for each input. Unknown fields, malformed pointers,
+cycles/excessive visits or depth, duplicate keys and unordered attributes return
+false plus an error. Both inputs pass these checks before any field difference can
+return false with no error. A caller must inspect the error first; invalid or
+unsupported metadata cannot become a retry conflict or an equal retry.
+
+The caller keeps both complete graphs stable throughout. Owned decoding and
+attribute ordering precede comparison; borrowed data requires an explicit copy
+before that earlier mutation. Comparison itself never sorts, clears fields or
+rewrites presence. It compares both schema URLs and complete Resource and Scope
+values, supplying local empty messages for their absent cases. Status uses the
+same local default, and every other Span field compares its presence and typed
+value. Special handling looks up the Status descriptor by name, rather than
+skipping an unexplained numeric tag. A schema fence pins every current Span field's
+name, number, kind and cardinality. A dependency upgrade requires reviewing that
+fence and the generated-field mutation coverage.
+
+`spanComparisonProjection` remains a deliberately copying oracle, separately
+normalizing its owned clones and filling the three permitted default shells.
+Direct tests compare against it in both directions, cover each current Span field,
+context URLs, numeric unknowns, full flags, floating values, narrow shell presence
+and sequence order, and check deterministic binary snapshots for nonmutation
+(including NaN payload bits and zero signs). Error tests put an obvious context
+mismatch before invalid data in either argument. Every keyed container is tested
+for refusal when unordered. Unknown wrapper fields fail `SpanAt`; unknown fields
+at each selected descendant fail the checked comparison. The fuzzer varies
+presence, double bits, enum numbers, flags, text, bytes, events and links against
+the copying oracle. These checks do not establish complete semantic admission,
+record-version/body equality, runtime acceptance or remote durability.
+
+For the comparison walk, F is the fixed set of Span descriptors, N the number of
+visited graph values, B byte content and S examined string bytes. Both algorithms
+have O(F+N+B+S) worst-case comparison time; direct reflection still allocates and
+makes no allocation-free or strict peak-space promise. Copying additionally
+allocates O(N+B) data; immutable string backing bytes are shared. Common bounds,
+uniqueness checks and attribute ordering have their own costs described below;
+they must not be omitted to make the direct walk faster. There are zero object
+requests in this lab. Real different-byte retries still need the selected bounded
+accepted-object read outside catalog locks and final authority/expiry/reference
+recheck. No catalog, authorization or stored reference changes here.
+
+As inspected in October 2026, protobuf-go v1.36.12's
+[`proto.Equal`](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/proto/equal.go#L42-L66)
+reads existing messages through reflection or generated equality methods without
+cloning. Its workload is protobuf value equality; it supplies neither Rewind's
+bounds nor our three optional-message exceptions. Its testing package
+[`protocmp.transformMessage`](https://github.com/protocolbuffers/protobuf-go/blob/cdd4c5f7406e82462949c7a65defa9f3029c162d/testing/protocmp/xform.go#L258-L277)
+constructs comparison maps for flexible assertions and diffs. That test-only
+workload supports keeping a projection oracle, not putting the same map transform
+in ingestion. These are observed upstream mechanisms; using a checked direct
+comparison and a copying oracle together is our design.
+
+We choose direct comparison to avoid copying whole already-prepared graphs merely
+to read them. The simpler copying comparator remains credible, particularly when
+comparison is negligible beside decoding and validation. Revisit if representative
+profiles or schema-maintenance costs outweigh the saved copying; keep semantics
+unchanged if the implementation strategy changes. The earlier component prototype
+is evidence about its measured comparison phase, not the latency of this checked
+operation or a complete request.
+
 ## Optional descriptive message comparison
 
 For retry-content comparison only, an absent Resource, InstrumentationScope or
