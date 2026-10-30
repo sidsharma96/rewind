@@ -126,8 +126,9 @@ protocol field definitions but adds OTLP/protobuf dependencies and still needs a
 explicit JSON serialization boundary. The [metadata investigation](CAPTURE.md#generated-metadata-and-json)
 checks that boundary. The selected serializer direction is a narrow adapter around
 `protojson`: numeric enums and hexadecimal IDs at actual span/link fields, without
-a parallel handwritten metadata schema or Collector data model. The maintained lab
-exercises that boundary before acceptance integration. The selected internal-record
+a parallel handwritten metadata schema or Collector data model. The concrete `record.MetadataCodec` now implements that boundary; the maintained
+lab delegates to it before typed acceptance integration. Its byte, graph-work and
+nesting limits are explicit configuration, not selected production defaults. The selected internal-record
 policy refuses unsupported metadata rather than discard it: unknown protobuf wire
 fields anywhere in the metadata must fail before JSON encoding. Known kind/status
 fields preserve unknown signed 32-bit enum numbers without inventing their meaning;
@@ -146,7 +147,7 @@ The JSON metadata direction preserves ordinary double bits and zero signs when
 saving, but does not preserve NaN diagnostic bits. The
 [floating-value contract](CAPTURE.md#floating-metadata-values) records that limit,
 lab coverage and the consumer-driven revisit condition. OTLP JSON
-transport compatibility remains a separate adapter responsibility. Attribute ordering will normalize exclusively owned messages in place; caller-owned
+transport compatibility remains a separate adapter responsibility. Attribute ordering normalizes exclusively owned messages in place; caller-owned
 messages require an explicit copy first. The [ordering direction](CAPTURE.md#owned-attribute-ordering)
 preserves sequence order and keeps the encoder non-mutating. Repeated attribute
 keys, including identical values and nested map keys, are refused before sorting
@@ -160,8 +161,8 @@ The [comparison projection](CAPTURE.md#optional-descriptive-message-comparison)
 remains the copying test oracle. The selected
 [direct comparison](CAPTURE.md#direct-metadata-comparison) checks both bounded,
 supported, attribute-ordered span views before comparing without copying their
-contents. It is exercised in the lab, with stable borrowed inputs and explicit
-errors; runtime retry resolution remains unimplemented. Other fields and schema URLs remain evidence. Revisit if a
+contents. The metadata codec implements it and the lab checks it against a copying oracle,
+with stable borrowed inputs and explicit errors; runtime retry resolution remains unimplemented. Other fields and schema URLs remain evidence. Revisit if a
 required consumer needs empty-shell presence itself to affect retry-content identity.
 Links with absent or correctly sized all-zero target IDs retain their received
 evidence, including empty link messages; derive an explicit unavailable target.
@@ -175,15 +176,21 @@ Full saved schema, remaining normalization, semantic validation and version/equa
 remain open.
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
-supports this direction. Its header, fixture schema and limits are not frozen
+supports this direction. A small common envelope will identify the format version,
+record kind and encoding, with a separate payload schema for each kind. After
+stored-object integrity verification, readers must cross-check the declared kind
+against the authorized catalog's expected kind and refuse unsupported or mismatched
+kinds before payload interpretation. This label supplies no authority or catalog
+reconstruction. The [kind-discrimination contract](CAPTURE.md#saved-object-kind-discrimination)
+records the choice; its byte layout, fixture schema and limits are not frozen
 production contracts. The selected compression policy skips records below a size
 threshold and otherwise keeps gzip only if smaller. Its selected starting default
 is a configurable 32 KiB for the complete uncompressed hybrid record, including
 metadata and framing but excluding any outer encoding marker; equality with the
 threshold attempts compression. Use configurable gzip BestSpeed as the starting
 setting, favoring lower compression CPU and allocation over the extra size savings of
-DefaultCompression. No production codec,
-runtime compression configuration or normalizer exists yet.
+DefaultCompression. The metadata codec includes owned attribute ordering, but
+no complete saved-record codec or runtime compression configuration exists yet.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
 needed for replay; missing capture must not be represented as an empty request or

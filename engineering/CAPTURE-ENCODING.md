@@ -301,6 +301,7 @@ than launching an unbounded goroutine per retry. Revisit using measured comparis
 rates, encoder versions, bytes, latency and failures, especially during upgrades.
 
 The current opaque-byte coordinator still requires an identical returned reference.
-Neither typed equality nor the selected fallback exists yet. Schema, normalization,
+Direct metadata equality is implemented in `record.MetadataCodec`; the selected
+runtime retry fallback is not. Full schema, remaining normalization,
 version compatibility, concrete capability/API changes and fault tests must precede
 integration; this decision does not freeze them or add a production codec.

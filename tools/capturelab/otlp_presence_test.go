@@ -23,8 +23,7 @@ func spanComparisonProjection(in spanrecord.Span) (*tracepb.TracesData, error) {
 	}
 	// Validate BEFORE Clone: arbitrary borrowed graphs may contain cycles,
 	// excessive nesting, duplicate keys or unsupported unknown wire fields.
-	budget := maxMetadata
-	if err := validateOTLPMessage(wrapped.ProtoReflect(), 0, &budget); err != nil {
+	if err := metadataCodec.Check(wrapped); err != nil {
 		return nil, err
 	}
 	out := proto.Clone(wrapped).(*tracepb.TracesData)

@@ -20,7 +20,6 @@ import (
 	"github.com/sidsharma96/rewind/internal/objectstore"
 	"github.com/sidsharma96/rewind/internal/record"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // This peer stores only synthetic bytes in memory. The actual object adapter and
@@ -141,11 +140,25 @@ func spanPayload(t *testing.T, f fixture) []byte {
 	}
 	// Recognizable generated metadata is a TEST PAYLOAD, not a production saved
 	// format. The existing Store still treats these bytes opaquely.
-	body, err := protojson.Marshal(packet)
+	codec := nativeMetadataCodec(t)
+	if err := codec.NormalizeOwned(packet); err != nil {
+		t.Fatal(err)
+	}
+	body, err := codec.Encode(packet)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return body
+}
+
+func nativeMetadataCodec(t *testing.T) record.MetadataCodec {
+	t.Helper()
+	// Explicit small fixture bounds, not production limits or a saved version.
+	codec, err := record.NewMetadataCodec(record.MetadataLimits{MaxBytes: 4096, MaxWork: 4096, MaxDepth: 64})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return codec
 }
 
 type lostPublicationReply struct {
@@ -183,6 +196,20 @@ func TestNativeStoragePathWriteReadRetry(t *testing.T) {
 	read, err := fresh.Read(t.Context(), id)
 	if err != nil || !bytes.Equal(read, body) {
 		t.Fatalf("fresh read failed: %v", err)
+	}
+	codec := nativeMetadataCodec(t)
+	packet, err := codec.Decode(read)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := record.SpanAt(packet, 0, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace, span, err := view.IDs()
+	if err != nil || trace != id.Trace || span != id.Span || view.Metadata.Name != "batch-worker" ||
+		view.Metadata.GetStatus().GetCode() != tracepb.Status_STATUS_CODE_ERROR || len(view.Metadata.Links) != 1 {
+		t.Fatal("fresh read lost typed failed-span evidence")
 	}
 	original, err := c.Lookup(t.Context(), id, "reader")
 	if err != nil {
