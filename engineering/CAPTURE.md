@@ -575,6 +575,66 @@ constructs fresh flags from byte-sized runtime trace flags and documented remote
 markers. That creation workload does not justify erasing high bits in received
 OTLP evidence; the protocol distinguishes creation from equivalent forwarding.
 
+## Links without usable targets
+
+Keep every bounded, structurally supported received link, even a completely empty
+message, when either target ID is absent or correctly sized but all zero. Preserve
+partial IDs, typed attributes, trace state, full flags, dropped counts and list
+position. Derive an explicit no-usable-target result instead of fabricating a key
+or dropping evidence. Empty IDs and fixed-width all-zero IDs remain distinct retry
+contents. A nil pointer in a message list is still malformed, not an empty message.
+Nonempty trace IDs must be 16 bytes and span IDs 8 bytes; wrong widths are refused,
+even if the other ID is absent. This is not a policy for malformed parent IDs.
+
+The internal `record.TargetOfLink` operation returns a copied `LinkTarget`, a
+usability boolean and an error. Both correctly sized nonzero IDs yield a usable
+key. Empty/zero IDs yield a zero target, false and no error; nil links return
+`record.ErrInvalid`, wrong widths `traceid.ErrInvalid`. No error or unavailable
+result exposes partial IDs. It checks both widths before deciding unavailable,
+reads only ID buffers, and neither mutates nor retains them. The caller keeps the
+borrowed link stable. Unknown fields remain intact for the independent complete
+metadata guard: target extraction does not certify complete record validity.
+
+A usable target is not proof that the linked span exists, is retained, belongs to
+the current project or can be read. No lookup or automatic target registration is
+performed here. The containing span still needs its own valid execution IDs and
+ordinary ownership/authorization. Neither partial nor valid link IDs supply those
+requirements. Future readers must show an explicit unavailable-target case; a valid
+key whose authorized lookup finds nothing is a different state.
+
+The lab's complete guard now checks link ID widths before normalization, encoding
+or direct comparison. This moves existing JSON shape refusal earlier and prevents
+an obvious difference from hiding malformed IDs on either input. Codec and
+comparison tests preserve all nine absent/zero/nonzero target combinations and
+empty message entries, keep all pairs distinct by original ID bytes, and retain
+link fields and sequence order when no target is usable. Unknown fields, wrong
+widths, nil entries and invalid own identity still fail their separate boundaries.
+The target helper has a byte-length/nonzero oracle fuzzer; the lab fuzzer varies ID
+shapes, full flags and integer attributes through round-trip and comparison.
+These are helper and lab checks, not runtime admission, viewer or replay support.
+
+As inspected in October 2026, OpenTelemetry's pinned
+[Link API rule](https://github.com/open-telemetry/opentelemetry-specification/blob/36ccfcfb33aca1e9c70a2cfd26e031ed9180949a/specification/trace/api.md#L801-L828)
+recommends recording empty/all-zero contexts when attributes or trace state contain
+information. The Go SDK's pinned
+[`recordingSpan.AddLink`](https://github.com/open-telemetry/opentelemetry-go/blob/983defdf55ffda64c2d3ddebcb85c5a5af2eb08a/sdk/trace/span.go#L720-L752)
+retains that case while recording, applying attribute limits; it drops an invalid
+context with neither attributes nor trace state. Those mechanisms concern producer
+recording. Keeping even empty link messages that reached Rewind is our stronger
+received-evidence rule, not an upstream requirement.
+
+The alternatives are dropping such links (keeping the span but losing evidence)
+or rejecting the entire span (simpler target-ID requirements but rejection of
+legitimate producer metadata). We retain the evidence and require consumers to
+separate it from navigation. Revisit if a named required consumer cannot safely
+represent no usable target, using its concrete failure before changing acceptance.
+Classification checks/copies at most 24 bytes per link: constant time and auxiliary
+space per link, linear work across the bounded link list. Retention/encoding and
+comparison still include all received fields under existing metadata limits. No
+object request, transferred byte, sidecar, lock, wait or recovery metadata is added.
+These are operation bounds, not measured throughput or a strict peak-memory cap
+for the entire metadata path.
+
 ## Direct metadata comparison
 
 Compare stable, prepared span metadata directly without cloning its descendants.
