@@ -188,7 +188,13 @@ length: readers enforce separate stored-input and actual expanded-output limits,
 then fully validate the payload. This saves a field and its consistency rules,
 while giving up early refusal from an honest oversized declaration and size
 inspection without decoding. Revisit for a concrete consumer needing that size
-upfront, block/range access or measured early-refusal value. The selected compression policy skips records below a size
+upfront, block/range access or measured early-refusal value. Gzip readers will accept
+complete valid member sequences as one logical payload, including empty members;
+the stored and expanded limits cover the whole input and combined output. Invalid
+later members and non-member trailing bytes fail before payload parsing. The writer
+will emit one member. The [member contract](CAPTURE.md#gzip-member-sequences) records
+the compatibility choice and lab checks; runtime saved-object decoding remains open.
+The selected compression policy skips records below a size
 threshold and otherwise keeps gzip only if smaller. Its selected starting default
 is a configurable 32 KiB for the complete uncompressed hybrid record, including
 metadata and framing but excluding any outer encoding marker; equality with the

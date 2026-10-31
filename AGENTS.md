@@ -163,8 +163,12 @@ numeric values must still be preserved under the policy above.
 The first envelope omits an exact expanded-payload length. Enforce separate stored
 and actual expanded byte limits; a size label cannot replace either. Revisit for
 an actual reader needing size before decoding, block/range access or measured
-value from early declared-size refusal. Header layout, production bounds and gzip
-member/trailing-data rules remain open.
+value from early declared-size refusal. Gzip readers accept a complete sequence of
+valid members as one logical payload, including empty members; cap the whole stored
+input and combined expanded output. Refuse invalid/truncated later members and
+non-member trailing bytes before payload parsing. Our writer emits one member.
+Revisit for a required consumer or measured workload that needs a narrower rule.
+Header layout, production bounds and runtime saved-object decoding remain open.
 
 
 ## Independent review
