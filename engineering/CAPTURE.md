@@ -85,9 +85,7 @@ checks read/close failures before payload parsing. Input/output byte caps do not
 bound total allocations, decompressor buffers or elapsed CPU time. Future limit
 configuration must be positive and leave room for the probe byte without integer
 overflow; no production defaults are selected here. Successful gzip must reach
-its validated end, since Close alone does not check the data checksum. Gzip member
-count and exact trailing-data rules remain a format checkpoint, rather than an
-implied consequence of this size decision.
+its validated end, since Close alone does not check the data checksum.
 
 As inspected in October 2026, Parquet's pinned
 [`PageHeader`](https://github.com/apache/parquet-format/blob/8c91fac200074c47af7ea5f1a87b0511245bb8a9/src/main/thrift/parquet.thrift#L830-L838)
@@ -97,6 +95,37 @@ supports the declared-size alternative; Rewind currently decodes whole objects.
 the trailer modulo 2^32, so it supplies no trusted upfront allocation bound. These
 mechanisms explain the choices; omitting another size field is our inference for
 Rewind's agreed read path, not a requirement imposed by either format.
+
+### Gzip member sequences
+
+Accept one or more valid gzip members and parse their joined plaintext as one
+kind-specific payload. A member is an independently compressed part with its own
+header and trailer. Empty members are allowed. The stored cap covers every member
+and header; the expanded cap covers their combined output. Validate every member
+through the complete input before calling the payload parser. Refuse checksum/size
+failures, truncated later members and non-member trailing bytes, including zero
+padding. Return no usable payload on any failure. Two members do not become two
+records, and compression grants no authority or retry identity.
+
+Our writer emits one member; many incremental writes can feed that same compressor.
+The reader follows ordinary gzip concatenation rather than imposing an extra
+single-member restriction without a concrete consumer need. Requiring exactly one
+member would narrow the format but needs an explicit decoder mode and a check for
+remaining input. We have no measured speed or safety advantage for either policy.
+Revisit if a required consumer cannot support complete member sequences or a
+measured workload justifies a narrower rule. Changing a published format would
+require an explicit compatibility/version decision.
+
+As inspected in October 2026, [RFC 1952 section 2.2](https://www.rfc-editor.org/rfc/rfc1952#section-2.2)
+defines consecutive members for general gzip interchange. Go 1.27.0's
+[`Reader` and `Multistream`](https://github.com/golang/go/blob/go1.27.0/src/compress/gzip/gunzip.go#L60-L139)
+join their output by default; its single-member mode supports formats needing
+separate stream boundaries. Those mechanisms support both alternatives. Our choice
+keeps standard reader behavior because Rewind needs one logical payload, not one
+compression part. The lab tests joined output, whole-input/combined-output limits
+and refusal before parsing when a later member fails. Runtime saved-object decoding
+is still unimplemented. Byte caps alone do not bound elapsed CPU or peak memory;
+empty members and headers consume stored bytes even when they add no output.
 
 ## Two entrances to one acceptance path
 
