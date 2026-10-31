@@ -183,7 +183,12 @@ against the authorized catalog's expected kind and refuse unsupported or mismatc
 kinds before payload interpretation. This label supplies no authority or catalog
 reconstruction. The [kind-discrimination contract](CAPTURE.md#saved-object-kind-discrimination)
 records the choice; its byte layout, fixture schema and limits are not frozen
-production contracts. The selected compression policy skips records below a size
+production contracts. The first common envelope omits an exact expanded-payload
+length: readers enforce separate stored-input and actual expanded-output limits,
+then fully validate the payload. This saves a field and its consistency rules,
+while giving up early refusal from an honest oversized declaration and size
+inspection without decoding. Revisit for a concrete consumer needing that size
+upfront, block/range access or measured early-refusal value. The selected compression policy skips records below a size
 threshold and otherwise keeps gzip only if smaller. Its selected starting default
 is a configurable 32 KiB for the complete uncompressed hybrid record, including
 metadata and framing but excluding any outer encoding marker; equality with the

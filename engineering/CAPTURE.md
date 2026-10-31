@@ -63,6 +63,41 @@ That is telemetry transport, not standalone persisted-object identification.
 Choosing the explicit label for Rewind is our inference from its multiple saved
 record kinds and inspection needs, not a requirement imposed by those projects.
 
+### Stored and expanded byte limits
+
+The first common envelope will omit an exact uncompressed-payload length. Bound
+stored input and actual expanded output separately, then fully decode and validate
+the kind-specific payload. An envelope label still grants no authority. The
+selected version/kind/encoding checks precede decompression after object integrity
+and authorized expected-kind checks.
+
+The two choices both require real limits. A declared length additionally permits
+early refusal of an honestly declared oversized payload, supports size inspection
+without decompression and can be checked against the result. Omitting it keeps
+one less field and consistency rule in the whole-object format, at the cost of
+possibly decoding up to the output limit before discovering excess. The extra
+field's byte overhead would be small; no performance advantage is claimed for
+omitting it. Revisit if a concrete reader needs expanded size before decoding,
+block/range access is selected, or measurements justify early refusal.
+
+The lab decoder enforces an expanded-output cap with one extra probe byte and
+checks read/close failures before payload parsing. Input/output byte caps do not
+bound total allocations, decompressor buffers or elapsed CPU time. Future limit
+configuration must be positive and leave room for the probe byte without integer
+overflow; no production defaults are selected here. Successful gzip must reach
+its validated end, since Close alone does not check the data checksum. Gzip member
+count and exact trailing-data rules remain a format checkpoint, rather than an
+implied consequence of this size decision.
+
+As inspected in October 2026, Parquet's pinned
+[`PageHeader`](https://github.com/apache/parquet-format/blob/8c91fac200074c47af7ea5f1a87b0511245bb8a9/src/main/thrift/parquet.thrift#L830-L838)
+contains compressed and uncompressed page sizes. That columnar page workload
+supports the declared-size alternative; Rewind currently decodes whole objects.
+[RFC 1952 section 2.3.1](https://www.rfc-editor.org/rfc/rfc1952) puts gzip's size in
+the trailer modulo 2^32, so it supplies no trusted upfront allocation bound. These
+mechanisms explain the choices; omitting another size field is our inference for
+Rewind's agreed read path, not a requirement imposed by either format.
+
 ## Two entrances to one acceptance path
 
 The selected metadata operations now live in one concrete `record.MetadataCodec`,
