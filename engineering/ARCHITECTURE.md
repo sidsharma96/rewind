@@ -176,14 +176,17 @@ Full saved schema, remaining normalization, semantic validation and version/equa
 remain open.
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
-supports this direction. A small common envelope will identify the format version,
+supports this direction. The internal `record.EnvelopeCodec` uses a fixed seven-byte common envelope for the format version,
 record kind and encoding, with a separate payload schema for each kind. After
 stored-object integrity verification, readers must cross-check the declared kind
 against the authorized catalog's expected kind and refuse unsupported or mismatched
 kinds before payload interpretation. This label supplies no authority or catalog
 reconstruction. The [kind-discrimination contract](CAPTURE.md#saved-object-kind-discrimination)
-records the choice; its byte layout, fixture schema and limits are not frozen
-production contracts. The first common envelope omits an exact expanded-payload
+records the choice; its `RWND` prefix and explicit version/kind/encoding tags are implemented, while
+kind-specific payload schemas and production limits remain open. Version 1 denotes
+the whole format revision, not only the header; synthetic test payloads do not
+freeze a public payload format. The codec requires caller-verified integrity and
+a catalog-authorized expected kind. The first common envelope omits an exact expanded-payload
 length: readers enforce separate stored-input and actual expanded-output limits,
 then fully validate the payload. This saves a field and its consistency rules,
 while giving up early refusal from an honest oversized declaration and size
@@ -193,7 +196,8 @@ complete valid member sequences as one logical payload, including empty members;
 the stored and expanded limits cover the whole input and combined output. Invalid
 later members and non-member trailing bytes fail before payload parsing. The writer
 will emit one member. The [member contract](CAPTURE.md#gzip-member-sequences) records
-the compatibility choice and lab checks; runtime saved-object decoding remains open.
+the compatibility choice and runtime framing checks; kind-specific saved payload
+decoding remains open.
 The selected compression policy skips records below a size
 threshold and otherwise keeps gzip only if smaller. Its selected starting default
 is a configurable 32 KiB for the complete uncompressed hybrid record, including
@@ -201,7 +205,8 @@ metadata and framing but excluding any outer encoding marker; equality with the
 threshold attempts compression. Use configurable gzip BestSpeed as the starting
 setting, favoring lower compression CPU and allocation over the extra size savings of
 DefaultCompression. The metadata codec includes owned attribute ordering, but
-no complete saved-record codec or runtime compression configuration exists yet.
+the envelope codec now exposes explicit byte bounds and compression policy.
+Complete saved-record schemas, typed admission and logical retry resolution remain open.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
 needed for replay; missing capture must not be represented as an empty request or
