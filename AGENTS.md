@@ -70,6 +70,31 @@ moving between decision points.
 After recording an answer, continue the authorized work to the next meaningful
 checkpoint in the same turn; do not stop merely to report that the answer was saved.
 
+Before a checkpoint, state the observable result it will add and why that work is
+needed for the current user-agreed milestone. Tie it to an agreed requirement in
+`engineering/ARCHITECTURE.md` or an explicit learning goal; the roadmap alone does
+not authorize work. Prefer a complete write/read/recovery or trace/playback
+operation over another standalone probe. Keep related implementation steps in one
+coherent checkpoint; do not split routine details into separate design discussions
+or PRs. Supporting work must resolve a concrete dependency, validate an identified
+invariant, or explain the code changed in that checkpoint. Stop an investigation
+when it answers its stated question; reopen it for changed inputs, contradictory
+evidence or a concrete unresolved failure.
+
+Preserve the intended learning project as well as its usable product path. Keep
+future algorithms, storage experiments and extensions in their agreed stage rather
+than implementing mechanisms merely for coverage. A bounded first release does not
+silently remove later learning goals. Shared-library work must identify the real
+consumer operation it enables or concrete duplicate maintenance it removes;
+coordination is not permission to invent more consumers or a shared engine.
+Bring material scope expansion to the user before dependent work. These rules
+preserve required research, independent reviews, checks and teaching. Workflow-only
+changes belong in agent guidance; change the book when its taught behavior or
+explanation is affected. Review evidence must explain necessity as well as
+correctness and ask reviewers to challenge avoidable work. Report demonstrated
+behavior, the remaining blocker and deferred work; do not use PR count or
+documentation volume as progress.
+
 Remote durability before acknowledgment is agreed. Account for payloads, accepted
 batches and recovery metadata; a database on the lost ingest host is not remote
 durability. A content hash is not event identity, a trace is not a complete replay

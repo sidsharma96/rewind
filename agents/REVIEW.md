@@ -10,6 +10,16 @@ or private book prose in public-source evidence. The runner snapshots staged blo
 excludes private paths, disables inherited Claude customization/MCP configuration
 and permits only Read, Grep and Glob. Reviewers cannot run tests.
 
+State the current user-agreed milestone, the observable result this checkpoint
+adds, and why its scope is necessary now. Identify the concrete dependency,
+invariant or learning objective served by supporting work, the simplest credible
+alternative, and what stays deferred. Ask reviewers to challenge avoidable work,
+premature abstractions and routine details split into separate checkpoints, as well
+as defects. Workflow-only changes should explain their effect on how work is
+scoped; they must not claim new application behavior. Preserve required checks,
+review and teaching, and do not turn a smaller release into a silent reduction of
+the agreed learning project.
+
 ```sh
 go run ./.tools/reviewer run --reviewer code --base origin/main \
   --evidence .tools/reviews/evidence.txt --report .tools/reviews/code-1.json
