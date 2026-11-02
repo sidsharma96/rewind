@@ -156,7 +156,13 @@ record kind and encoding, with kind-specific payloads. After object integrity
 verification, cross-check the declared kind against the authorized catalog's
 expected kind. Refuse unsupported versions/kinds and mismatches; never decode a
 future kind as a final span. The label grants no authority and cannot reconstruct
-acceptance. Header layout, production bounds and the runtime codec remain open;
+acceptance. `record.EnvelopeCodec` now implements the seven-byte `RWND` prefix,
+version 1, span/capture tags 1/2 and plain/gzip tags 0/1. The version covers the
+whole format revision; kind-specific schemas remain open, and synthetic fixture
+payloads do not freeze them. Map catalog kinds explicitly rather than casting
+`ingest.Kind`. Decode requires caller-verified size/digest and an authorized
+expected kind, checks labels before decompression, and returns owned payloads or
+nil on error. Typed admission, complete payload codecs and production limits remain open;
 see `engineering/CAPTURE.md#saved-object-kind-discrimination`.
 Envelope record kind is separate from descriptive OTLP span kind, whose unknown
 numeric values must still be preserved under the policy above.
@@ -168,7 +174,9 @@ valid members as one logical payload, including empty members; cap the whole sto
 input and combined expanded output. Refuse invalid/truncated later members and
 non-member trailing bytes before payload parsing. Our writer emits one member.
 Revisit for a required consumer or measured workload that needs a narrower rule.
-Header layout, production bounds and runtime saved-object decoding remain open.
+The envelope codec implements these byte boundaries with explicit limits and the
+agreed configurable compression policy; kind-specific payload decoding, typed
+admission and production byte limits remain open.
 
 
 ## Independent review

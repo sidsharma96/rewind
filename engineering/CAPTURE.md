@@ -10,8 +10,9 @@ a complete record schema remains open. The selected saved layout is versioned fr
 and response bytes. Compression uses a size gate, then keeps gzip only if smaller;
 the selected starting threshold is configurable with a 32 KiB default for the
 complete hybrid record before compression or an outer encoding marker. The selected
-gzip starting setting is configurable BestSpeed. Header details, complete metadata/body-state
-rules and limits also remain open. The current
+gzip starting setting is configurable BestSpeed. The internal envelope framing is now implemented by `record.EnvelopeCodec` below;
+complete kind-specific payload schemas, metadata/body-state rules and production
+byte limits remain open. The current
 ingest coordinator receives opaque bytes and does not know OpenTelemetry types.
 An isolated [encoding experiment](CAPTURE-ENCODING.md) compares full JSON with
 JSON metadata and raw bodies, including compression. The user selected the hybrid
@@ -31,19 +32,54 @@ as CLIENT or INTERNAL. Unknown numbers in that metadata field still follow the
 separate preservation policy; refusing an unsupported record decoder changes none
 of those numeric-value rules.
 
-This selects explicit kind discrimination, not a frozen header layout, production
-limits, capture schema or public format. Span and capture remain independent
+The internal `record.EnvelopeCodec` implements the selected fixed seven-byte
+prefix: ASCII `RWND` at offsets 0-3, version 1 at offset 4, object kind at offset
+5 (span 1, capture 2), and encoding at offset 6 (plain 0, gzip 1). These object
+kind tags are separate from both `ingest.Kind` and OTLP span kind. Map the catalog
+kind explicitly; do not cast its internal enum to a wire tag.
+
+The version selects the whole saved-format revision, including the prefix and
+kind-specific payload schemas together. A future incompatible change to either
+requires an explicit supported-version decision. This checkpoint implements
+framing over opaque payload bytes, not those payload schemas or typed admission;
+synthetic composed-test payloads do not freeze a public format. Production byte
+limits and the capture schema remain open. Span and capture remain independent
 records. Future lifecycle events need their separate identities and contracts;
 reserving the ability to distinguish them does not implement or accept them.
-No accepted object is rewritten by this decision. Runtime typed preparation,
-framing/decoding and logical retry resolution still need implementation.
+No accepted object is rewritten by this decision. Typed preparation, kind-specific
+payload decoding and logical retry resolution still need implementation. Encode borrows stable prepared bytes and returns an
+independent stored buffer. Decode expects caller-verified size/digest and a
+catalog-authorized kind, returning independent payload bytes or nil on every
+error. It checks the whole stored cap, minimum header length and magic, supported
+version/kind/encoding, and the expected kind before expanding anything. Malformed
+framing, unsupported labels, kind mismatch and excessive bytes have distinct
+errors. Success still requires the caller to parse and validate the payload.
+
+`EnvelopeLimits` require explicit positive expanded limits, a stored cap of at
+least seven bytes, and room for framing/probe arithmetic. The zero codec refuses
+operations. `DefaultCompressionPolicy()` supplies the agreed 32 KiB threshold
+and gzip BestSpeed; callers may supply a positive threshold and a supported gzip
+level. The threshold counts the uncompressed payload plus six non-encoding
+prefix bytes. Equality attempts gzip; only a smaller complete object wins.
+A bounded candidate writer stops when gzip cannot fit the stored cap or cannot
+beat plain bytes. That size outcome falls back to plain when it fits; actual
+compressor failures return no output. This limits the candidate's written length,
+not buffer capacity, gzip's internal buffers, total allocations or elapsed CPU.
+
+The codec has immutable configuration and no shared request state, object calls,
+catalog calls or workers. Header dispatch has constant work; compression and
+expansion depend on bounded input/output. The native composition test exercises
+both encodings through real catalog publication, fresh authorized reads and the
+controlled object peer, then checks the expected kind before metadata decoding.
+It also preserves original encoded retries, separate capture objects and conflicts.
+Store remains opaque; its different-encoded-bytes comparison path is still absent.
 
 The simpler alternative supplies kind only from catalog/request context and uses
 separate typed decoders. That can be safe when every reader retains the correct
 context. We keep the label so decoding can cross-check that context and an object
 inspector can identify the payload type. Parsing a fixed bounded header has
-constant work and auxiliary space and adds no object or catalog request. Exact
-byte overhead and latency are unmeasured. Including kind in the bytes can prevent
+constant work and auxiliary space and adds no object or catalog request. The prefix adds seven stored bytes (derived from its layout);
+latency is unmeasured. Including kind in the bytes can prevent
 cross-kind reuse of otherwise identical payload objects; content equality never
 made span and capture the same event. Revisit a common envelope if concrete
 per-kind layouts or measured overhead justify separating formats, retaining
@@ -63,6 +99,20 @@ That is telemetry transport, not standalone persisted-object identification.
 Choosing the explicit label for Rewind is our inference from its multiple saved
 record kinds and inspection needs, not a requirement imposed by those projects.
 
+For the fixed header rather than a structured header, Prometheus v3.0.0
+[`newReader`](https://github.com/prometheus/prometheus/blob/c5d009d57fcccb7247e1191a0b10d74b06295388/tsdb/chunks/chunks.go#L590-L605)
+checks its time-series segment header's minimum size, magic and version before
+chunk access. This supports bounded prefix dispatch, not its segment layout or
+storage guarantee for Rewind. The credible structured alternative is illustrated
+by etcd v3.6.0's
+[`Record`](https://github.com/etcd-io/etcd/blob/f5d605a93abe2fdfa13880aab0f1f3a4203628dd/server/storage/wal/walpb/record.proto#L14-L18)
+and [length-framed encoding](https://github.com/etcd-io/etcd/blob/f5d605a93abe2fdfa13880aab0f1f3a4203628dd/server/storage/wal/encoder.go#L108-L128):
+a recovery log stores typed Protobuf records inside length-delimited frames.
+Our whole-object workload needs three mandatory labels, not extensible header
+fields or log alignment. We keep the fixed prefix to avoid another bounded parser
+and generated schema. Revisit for an actual consumer requiring optional header
+fields independent of payload changes; no speed advantage has been measured.
+
 ### Stored and expanded byte limits
 
 The first common envelope will omit an exact uncompressed-payload length. Bound
@@ -80,9 +130,9 @@ field's byte overhead would be small; no performance advantage is claimed for
 omitting it. Revisit if a concrete reader needs expanded size before decoding,
 block/range access is selected, or measurements justify early refusal.
 
-The lab decoder enforces an expanded-output cap with one extra probe byte and
-checks read/close failures before payload parsing. Input/output byte caps do not
-bound total allocations, decompressor buffers or elapsed CPU time. Future limit
+Both the runtime envelope decoder and the lab decoder enforce an expanded-output cap with one extra probe byte and
+check read/close failures before payload parsing. Input/output byte caps do not
+bound total allocations, decompressor buffers or elapsed CPU time. Limit
 configuration must be positive and leave room for the probe byte without integer
 overflow; no production defaults are selected here. Successful gzip must reach
 its validated end, since Close alone does not check the data checksum.
@@ -122,9 +172,9 @@ defines consecutive members for general gzip interchange. Go 1.27.0's
 join their output by default; its single-member mode supports formats needing
 separate stream boundaries. Those mechanisms support both alternatives. Our choice
 keeps standard reader behavior because Rewind needs one logical payload, not one
-compression part. The lab tests joined output, whole-input/combined-output limits
-and refusal before parsing when a later member fails. Runtime saved-object decoding
-is still unimplemented. Byte caps alone do not bound elapsed CPU or peak memory;
+compression part. Runtime envelope and lab tests check joined output, whole-input/combined-output
+limits and refusal before payload parsing when a later member fails. Kind-specific
+runtime payload parsing is still unimplemented. Byte caps alone do not bound elapsed CPU or peak memory;
 empty members and headers consume stored bytes even when they add no output.
 
 ## Two entrances to one acceptance path
@@ -136,8 +186,8 @@ existing bounded guard, JSON adapter, keyed ordering and direct comparison rules
 `Check` is a structural/representation guard, not complete semantic admission;
 `Decode` parses owned metadata and does not bypass later checking. The copying
 comparison remains a separate lab oracle. No default production limits, saved
-envelope implementation, public OTLP receiver or typed acceptance API follows from
-this move.
+public OTLP receiver or typed acceptance API follows from this move. The separate
+`EnvelopeCodec` now handles saved-object framing, not kind-specific schemas.
 
 The codec owns no connections, workers or mutable request state. Encoding and
 comparison borrow stable inputs; decoding returns an independent graph. Owned

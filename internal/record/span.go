@@ -1,6 +1,7 @@
 // Package record associates generated spans with inline context and provides
-// bounded metadata encoding, owned ordering and read-only comparison. It does not
-// authenticate, validate complete records, or define a complete saved format.
+// bounded metadata encoding, owned ordering, read-only comparison and saved-object
+// envelope framing. It does not authenticate, validate complete records, or define
+// the kind-specific payload schemas of a complete saved format.
 package record
 
 import (
