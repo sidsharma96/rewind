@@ -126,6 +126,8 @@ func (c EnvelopeCodec) Encode(kind ObjectKind, payload []byte) ([]byte, error) {
 // this function cannot establish those prerequisites. It validates framing and
 // supported labels before kind comparison, and kind before decompression. On
 // success the caller must still parse and validate the kind-specific payload.
+// Gzip failures retain their standard-library errors. Any non-nil error,
+// including io.EOF for a missing gzip stream, is refusal, not successful end.
 func (c EnvelopeCodec) Decode(expected ObjectKind, stored []byte) ([]byte, error) {
 	if !c.valid() {
 		return nil, ErrEnvelopeInvalid

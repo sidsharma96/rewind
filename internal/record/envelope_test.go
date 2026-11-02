@@ -39,10 +39,14 @@ func envelopeFixture(kind, encoding byte, payload []byte) []byte {
 
 func TestEnvelopeHeaderAndOwnership(t *testing.T) {
 	c := envelopeCodec(t, 1024, 1024, 32768)
-	for _, kind := range []ObjectKind{SpanObject, CaptureObject} {
+	for _, tc := range []struct {
+		kind ObjectKind
+		tag  byte
+	}{{SpanObject, 1}, {CaptureObject, 2}} {
+		kind := tc.kind
 		payload := []byte{0, 255, 128, 'x'}
 		stored, err := c.Encode(kind, payload)
-		if err != nil || !bytes.Equal(stored, envelopeFixture(byte(kind), 0, payload)) {
+		if err != nil || !bytes.Equal(stored, envelopeFixture(tc.tag, 0, payload)) {
 			t.Fatal("wrong fixed envelope", err)
 		}
 		payload[0] = 42
@@ -176,6 +180,12 @@ func TestEnvelopeIndependentBounds(t *testing.T) {
 func TestEnvelopeCompressionSelection(t *testing.T) {
 	const threshold = 32768
 	c := envelopeCodec(t, 1<<17, 1<<17, threshold)
+	// Four payload bytes plus six non-encoding header bytes reach ten exactly;
+	// a complete gzip stream cannot fit the three-byte saving budget.
+	tiny := []byte{0, 255, 128, 'x'}
+	if b, err := envelopeCodec(t, 1024, 1024, 10).Encode(SpanObject, tiny); err != nil || !bytes.Equal(b, envelopeFixture(1, 0, tiny)) {
+		t.Fatal("threshold-ten fixture did not fall back to plain", err)
+	}
 	for _, size := range []int{threshold - 7, threshold - 6, threshold - 5} {
 		payload := bytes.Repeat([]byte{'x'}, size)
 		b, err := c.Encode(SpanObject, payload)
@@ -268,6 +278,26 @@ func TestEnvelopeGzipWholeSequence(t *testing.T) {
 	empty := envelopeFixture(2, 1, envelopeGzip(t, nil))
 	if b, err := envelopeCodec(t, len(empty), 1, 32).Decode(CaptureObject, empty); err != nil || len(b) != 0 {
 		t.Fatal("valid empty gzip refused", err)
+	}
+}
+
+func TestEnvelopeMalformedGzipReturnsNoPayload(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body []byte
+		want error
+	}{
+		{"empty", nil, io.EOF},
+		{"short", []byte{0x1f}, io.ErrUnexpectedEOF},
+		{"garbled", make([]byte, 10), gzip.ErrHeader},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stored := envelopeFixture(1, 1, tc.body)
+			got, err := envelopeCodec(t, 1024, 1024, 32).Decode(SpanObject, stored)
+			if got != nil || err == nil || !errors.Is(err, tc.want) {
+				t.Fatal("malformed gzip exposed payload or lost underlying error", err)
+			}
+		})
 	}
 }
 
