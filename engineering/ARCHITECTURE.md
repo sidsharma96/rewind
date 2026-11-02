@@ -320,8 +320,13 @@ packages. Transport must not own format rules. Storage must not import CLI code.
 
 The agreed direction is a small in-process Go object-storage library. Candidate
 shared operations are immutable writes, bounded full/range reads, integrity checks,
-provider errors and storage fault tests. Establish one write/read/recovery sequence
-from each project before extracting it. Keep journals, catalogs, publication
+provider errors and storage fault tests. Each application keeps its current
+scope-to-object-key mapping in a trusted adapter. The selected common verified
+read requires exact stored size and digest plus an independent configured byte
+cap; Rewind's consumer-owned object operation is explicitly ReadExact. It does
+not add an expanded-length field to the record envelope. Both projects now have
+controlled writer-process/lost-COMMIT sequences; complete the joint contract and
+design review before extraction. Keep journals, catalogs, publication
 transactions, compaction, retention, tenant policy and acknowledgments with each
 application. Defer shared caching, a separate service and a shared storage engine.
 Do not add cross-checkout imports or local module replacements to public source.

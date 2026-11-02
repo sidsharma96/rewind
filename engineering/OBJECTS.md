@@ -35,9 +35,14 @@ existing object. Revisit after measuring duplicate frequency, object sizes and
 request cost on a representative capture workload; no performance result exists.
 
 A successful Create verifies SHA-256 and exact byte equality against its input.
-A successful Read verifies SHA-256 and returns owned bytes. Read's caller supplies
-an upper byte bound, not an expected length; Store separately checks the catalog's
-exact size. Empty objects are allowed. ETag is not used as SHA-256. Wrong bytes,
+A successful ReadExact verifies the expected stored length and SHA-256 and returns
+owned bytes. Its caller supplies the exact size from the accepted catalog reference;
+Store repeats that reference's length/hash checks. The adapter's independent configured
+byte cap refuses larger expectations before object I/O. A stored length mismatch
+is ErrIntegrity, including a shorter body whose hash matches; an expectation above
+the cap is ErrTooLarge. Zero means exactly empty, not an unspecified length. This
+counts stored bytes, before envelope expansion; expanded-payload limits stay separate.
+ETag is not used as SHA-256. Wrong bytes,
 truncation and oversized responses never produce a successful result.
 
 ## Ownership and limits
@@ -70,10 +75,13 @@ accepted reference, attribution and trace index. This adapter cannot supply them
 
 ## Errors and evidence
 
-Read maps only structured NoSuchKey + 404 to `ingest.ErrObjectMissing`; access
-denial, generic 404 and unavailable service remain failures. An oversized read
-returns `ingest.ErrTooLarge`, invalid identifiers/configuration return ErrInvalid,
-and digest/contents mismatch returns ErrIntegrity. Provider text is redacted in
+ReadExact maps only structured NoSuchKey + 404 to `ingest.ErrObjectMissing`; access
+denial, generic 404 and unavailable service remain failures. An expected length above
+the configured byte cap
+returns `ingest.ErrTooLarge` before I/O; a negative expectation or invalid
+identifier/configuration returns ErrInvalid. Header/actual-length or digest/contents
+mismatch returns ErrIntegrity, with no successful result bytes. Provider text is
+redacted in
 normal errors; wrapped causes remain available for inspection and must not be
 logged indiscriminately. An unresolved Create uses its own uncertainty sentinel,
 never catalog absence or a claim that no object was saved.
@@ -96,19 +104,32 @@ is extracted until both applications have exercised their own recovery contract.
 ### Extraction checkpoint
 
 The comparison against Concordance revision
-`10a92299c32e7995e74cfd9cbc43a11a1dcc869b`, `internal/objectstore/store.go`
+`d6e7b19c29faf4816169067a545ba993b27ca5cd`, `internal/objectstore/store.go`
 (`EnsureVerified`, `Read`), finds the same strict GET/conditional-PUT/GET baseline.
-This is a source comparison, not a joint recovery test or approval to extract.
-Rewind's compared implementation starts at `da4e7c220f512404635029349d26b2ae1b13da32`;
-the process drill adds test coverage around its unchanged object/catalog contracts.
+Both projects now have controlled writer-process recovery sequences and an actual
+delivered comparison. That evidence is not a joint shared-library test or approval
+to extract. Rewind's process drill merged at
+`b0b53e7566d95af121808303955074b91138f319`; its object adapter now explicitly
+requires exact stored size through ReadExact. Neither application changes its
+catalog acceptance or acknowledgment by making that object-read contract explicit.
+
+Applications retain their existing scope-to-key mapping in trusted adapters:
+Rewind's opaque tenant bytes and `v1/tenants` layout, Concordance's qualified
+collection and `v1/collections` layout. The selected shared direction accepts a
+resolved object key; it does not infer authority from that key. Endpoint, bucket,
+client and credential routing remain trusted owner configuration. There is no
+namespace migration or new shared routing API. Exact stored size and digest, with
+an independent byte cap, are the selected common read direction. Final shared
+signatures, write-reference construction, admission/deadline ownership and error
+mapping still need joint design review before extraction.
 
 | Boundary | Rewind | Concordance |
 | --- | --- | --- |
 | Authorized namespace | Per-call opaque tenant bytes | Store-bound globally qualified UTF-8 collection |
-| Read length | Upper bound; Store checks exact catalog size | Reference carries exact size, checked by adapter |
+| Read length | ReadExact verifies expected stored size within an independent cap; Store repeats catalog checks | Reference carries exact size, checked by adapter within its cap |
 | Admission and timeout | Adapter bounds active calls and elapsed time | Caller owns admission and supplies a deadline |
 | Publication | Record catalog must accept identity/owner/reference | Catalog publishes an entire generation |
-| Recovery evidence | Separate writer killed/reaped, working directory removed; replacement finds committed span/capture through PostgreSQL and controlled objects | Generation publication, fresh SQL/object clients, search/quote exercised; writer-process loss and network-COMMIT loss remain open |
+| Recovery evidence | Separate writer killed/reaped, working directory removed; replacement finds committed span/capture through PostgreSQL and controlled objects | Writer killed/reaped and directory removed; fresh process recovers catalog-published generation and exact quotes; actual final COMMIT response loss exercised |
 
 Rewind's process drill observes both acknowledged acceptance and an actual lost
 PostgreSQL COMMIT response, plus a disconnected stored PUT and a crash before
@@ -116,16 +137,20 @@ publication. It counts HTTP bodies/requests and checks current permission refusa
 before object access. The controlled HTTP service and database survive, on the
 same test host: this is not real R2/host-loss recovery. See
 [the recovery experiment](INGEST.md#writer-process-recovery) for sequence, counts
-and limits. Concordance's `engineering/experiments/generation-publication.md`
-likewise distinguishes fresh-client recovery from host-loss/provider evidence.
+and limits. Concordance's [counterpart drill](https://github.com/sidsharma96/concordance/blob/d6e7b19c29faf4816169067a545ba993b27ca5cd/engineering/experiments/writer-process-recovery.md)
+likewise uses surviving local PostgreSQL/HTTP objects and records per-phase request
+and body-byte counts. Its completed retry returns the original generation without
+object requests; an unpublished candidate remains invisible until explicit retry.
+Different record/generation fixtures are not comparative adapter performance.
 
 Concordance also has verification receipts and a reuse component above its strict
 object path. Those do not establish Rewind's authorization, retention or acceptance
-and are not approved for shared extraction. The next comparison must start with
-each application's committed catalog reference after replacing its writer, resolve
-an ambiguous object write and catalog commit, and count requests/transferred bytes.
-Keep the different scope, length and admission contracts explicit before choosing
-a library API. Neither adapter currently supplies range reads or safe deletion.
+and are not approved for shared extraction. Both process examples start with
+catalog state after replacing the writer, resolve ambiguous object and final catalog
+commit outcomes, and record requests/body bytes. Keep the remaining scope,
+write-reference, admission/deadline and error-mapping differences explicit before
+choosing the complete library API. Neither adapter currently supplies range reads
+or safe deletion.
 
 The coordination trigger is any proposed change to the object operations or their
 scope, integrity, bounds, retry/error, admission or timeout contract, including
@@ -140,8 +165,9 @@ write, committed catalog reference, replacement-writer read, lost write/commit
 replies, requests, transferred bytes and remaining failures. Keep application
 acknowledgments distinct. Propose the smallest common API only when both sequences
 are exercised; review the differences above and require an explicit response from
-the other project's agent before calling that API agreed. Until then, the source
-comparison here is readiness evidence, not a sent message or approved extraction.
+the other project's agent before calling that API agreed. The delivered exchange
+and selected key/read directions are readiness evidence, not approval of the
+complete API or extraction.
 
 ## Opt-in development-bucket probe
 

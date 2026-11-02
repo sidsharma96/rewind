@@ -134,13 +134,13 @@ func TestCreateRetryFreshClientAndTenantSeparation(t *testing.T) {
 		if err = fresh.Create(t.Context(), id, body); err != nil {
 			t.Fatal(err)
 		}
-		got, err := fresh.Read(t.Context(), id, len(body))
+		got, err := fresh.ReadExact(t.Context(), id, len(body))
 		if err != nil || !bytes.Equal(got, body) {
 			t.Fatalf("read %q: %v", got, err)
 		}
 		if len(got) > 0 {
 			got[0] = 'X'
-			again, err := s.Read(t.Context(), id, 1024)
+			again, err := s.ReadExact(t.Context(), id, len(body))
 			if err != nil || !bytes.Equal(again, body) {
 				t.Fatal("result aliases remote", err)
 			}
@@ -288,9 +288,9 @@ func TestAdmissionCancellationAndTimeout(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	result := make(chan error, 1)
 	id := object("project", nil)
-	go func() { _, err := s.Read(ctx, id, 10); result <- err }()
+	go func() { _, err := s.ReadExact(ctx, id, 10); result <- err }()
 	<-entered
-	if _, err := s.Read(t.Context(), id, 10); !errors.Is(err, ingest.ErrBusy) {
+	if _, err := s.ReadExact(t.Context(), id, 10); !errors.Is(err, ingest.ErrBusy) {
 		t.Fatal(err)
 	}
 	cancel()
@@ -298,7 +298,7 @@ func TestAdmissionCancellationAndTimeout(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The first return releases admission. The next real operation times out.
-	if _, err := s.Read(t.Context(), id, 10); !errors.Is(err, context.DeadlineExceeded) {
+	if _, err := s.ReadExact(t.Context(), id, 10); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal(err)
 	}
 	if len(s.active) != 0 {
@@ -328,12 +328,12 @@ func TestValidationAndOpaqueTenantKeys(t *testing.T) {
 	if err := s.Create(t.Context(), object("p", large), large); !errors.Is(err, ingest.ErrTooLarge) {
 		t.Fatal(err)
 	}
-	if _, err := s.Read(t.Context(), object("p", nil), -1); !errors.Is(err, ingest.ErrInvalid) {
+	if _, err := s.ReadExact(t.Context(), object("p", nil), -1); !errors.Is(err, ingest.ErrInvalid) {
 		t.Fatal(err)
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := s.Read(ctx, object("p", nil), 10); !errors.Is(err, context.Canceled) {
+	if _, err := s.ReadExact(ctx, object("p", nil), 10); !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	if r, _, _ := b.counts(); r != 0 {
@@ -344,7 +344,7 @@ func TestValidationAndOpaqueTenantKeys(t *testing.T) {
 func TestMissingReadAndInvalidConfiguration(t *testing.T) {
 	b := &backend{}
 	s, client := fixture(t, b)
-	if data, err := s.Read(t.Context(), object("p", nil), 10); data != nil || !errors.Is(err, ingest.ErrObjectMissing) || errors.Is(err, ingest.ErrNotFound) {
+	if data, err := s.ReadExact(t.Context(), object("p", nil), 10); data != nil || !errors.Is(err, ingest.ErrObjectMissing) || errors.Is(err, ingest.ErrNotFound) {
 		t.Fatalf("%q %v", data, err)
 	}
 	for _, l := range []Limits{{}, {MaxBytes: 1, MaxActive: 1}, {MaxBytes: 1, OperationTimeout: time.Second}, {MaxBytes: -1, MaxActive: 1, OperationTimeout: time.Second}, {MaxBytes: int(^uint(0) >> 1), MaxActive: 1, OperationTimeout: time.Second}} {

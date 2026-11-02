@@ -72,7 +72,7 @@ func TestR2LiveImmutableObjects(t *testing.T) {
 		t.Fatal("identical retry:", err)
 	}
 	fresh, _, _ := newClient(false)
-	if got, err := fresh.Read(ctx, id, 1024); err != nil || !bytes.Equal(got, body) {
+	if got, err := fresh.ReadExact(ctx, id, len(body)); err != nil || !bytes.Equal(got, body) {
 		t.Fatal("fresh-client read:", err)
 	}
 	// Exercise R2's condition itself: the adapter deliberately cannot send wrong
@@ -89,7 +89,7 @@ func TestR2LiveImmutableObjects(t *testing.T) {
 	if !errors.As(err, &api) || api.ErrorCode() != "PreconditionFailed" || !errors.As(err, &status) || status.HTTPStatusCode() != 412 {
 		t.Fatal("conditional overwrite did not return PreconditionFailed with HTTP 412")
 	}
-	if got, err := fresh.Read(ctx, id, 1024); err != nil || !bytes.Equal(got, body) {
+	if got, err := fresh.ReadExact(ctx, id, len(body)); err != nil || !bytes.Equal(got, body) {
 		t.Fatal("original changed after rejected overwrite:", err)
 	}
 	t.Log("R2 rejected conditional overwrite; original bytes remain readable")
@@ -107,7 +107,7 @@ func TestR2LiveImmutableObjects(t *testing.T) {
 		t.Fatal("probe did not discard a successful PUT reply")
 	}
 	recovered, _, _ := newClient(false)
-	if got, err := recovered.Read(ctx, otherID, 1024); err != nil || !bytes.Equal(got, other) {
+	if got, err := recovered.ReadExact(ctx, otherID, len(other)); err != nil || !bytes.Equal(got, other) {
 		t.Fatal("fresh-client recovery:", err)
 	}
 	t.Logf("retained two synthetic immutable objects in rewind-dev, tenant %s", tenant)

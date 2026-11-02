@@ -100,15 +100,12 @@ func (s *Store) Create(ctx context.Context, id ingest.ObjectID, contents []byte)
 	if sha256.Sum256(contents) != id.Digest {
 		return ingest.ErrIntegrity
 	}
-	stored, err := s.read(ctx, id, k, len(contents))
+	stored, err := s.readExact(ctx, id, k, len(contents))
 	if err == nil {
 		if !bytes.Equal(stored, contents) {
 			return ingest.ErrIntegrity
 		}
 		return nil
-	}
-	if errors.Is(err, ingest.ErrTooLarge) {
-		return ingest.ErrIntegrity
 	}
 	if !errors.Is(err, ingest.ErrObjectMissing) {
 		return err
@@ -117,11 +114,8 @@ func (s *Store) Create(ctx context.Context, id ingest.ObjectID, contents []byte)
 		Bucket: aws.String(s.bucket), Key: aws.String(k), Body: bytes.NewReader(contents),
 		ContentLength: aws.Int64(int64(len(contents))), ContentType: aws.String("application/octet-stream"), IfNoneMatch: aws.String("*"),
 	}, attemptOptions(controlBodyLimit))
-	stored, err = s.read(ctx, id, k, len(contents))
+	stored, err = s.readExact(ctx, id, k, len(contents))
 	if err != nil {
-		if errors.Is(err, ingest.ErrTooLarge) {
-			err = ingest.ErrIntegrity
-		}
 		if errors.Is(err, ingest.ErrIntegrity) {
 			return errors.Join(err, provider("create", putErr))
 		}
@@ -139,26 +133,30 @@ func (s *Store) Create(ctx context.Context, id ingest.ObjectID, contents []byte)
 	return nil
 }
 
-// Read returns owned, hash-verified bytes within both the caller's and adapter's
-// limits. It returns ErrTooLarge instead of a truncated successful payload.
-func (s *Store) Read(ctx context.Context, id ingest.ObjectID, maxBytes int) ([]byte, error) {
+// ReadExact returns owned bytes only after checking their exact stored length and
+// digest. expectedBytes is not a maximum or an expanded-payload length. The
+// independent configured byte cap is checked before admission or object I/O.
+func (s *Store) ReadExact(ctx context.Context, id ingest.ObjectID, expectedBytes int) ([]byte, error) {
 	k, err := key(id)
 	if err != nil {
 		return nil, err
 	}
-	if maxBytes < 0 {
+	if expectedBytes < 0 {
 		return nil, ingest.ErrInvalid
+	}
+	if expectedBytes > s.limits.MaxBytes {
+		return nil, ingest.ErrTooLarge
 	}
 	ctx, release, err := s.admit(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	return s.read(ctx, id, k, min(maxBytes, s.limits.MaxBytes))
+	return s.readExact(ctx, id, k, expectedBytes)
 }
 
-func (s *Store) read(ctx context.Context, id ingest.ObjectID, k string, maxBytes int) (data []byte, resultErr error) {
-	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(k)}, attemptOptions(int64(maxBytes)+1))
+func (s *Store) readExact(ctx context.Context, id ingest.ObjectID, k string, expectedBytes int) (data []byte, resultErr error) {
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(k)}, attemptOptions(int64(expectedBytes)+1))
 	if err != nil {
 		var api smithy.APIError
 		var status interface{ HTTPStatusCode() int }
@@ -176,22 +174,14 @@ func (s *Store) read(ctx context.Context, id ingest.ObjectID, k string, maxBytes
 			resultErr = errors.Join(resultErr, provider("close read", err))
 		}
 	}()
-	if out.ContentLength != nil {
-		if *out.ContentLength < 0 {
-			return nil, ingest.ErrIntegrity
-		}
-		if *out.ContentLength > int64(maxBytes) {
-			return nil, ingest.ErrTooLarge
-		}
+	if out.ContentLength != nil && *out.ContentLength != int64(expectedBytes) {
+		return nil, ingest.ErrIntegrity
 	}
-	data, err = io.ReadAll(io.LimitReader(out.Body, int64(maxBytes)+1))
+	data, err = io.ReadAll(io.LimitReader(out.Body, int64(expectedBytes)+1))
 	if err != nil {
 		return nil, provider("read body", err)
 	}
-	if len(data) > maxBytes {
-		return nil, ingest.ErrTooLarge
-	}
-	if out.ContentLength != nil && *out.ContentLength != int64(len(data)) || sha256.Sum256(data) != id.Digest {
+	if len(data) != expectedBytes || sha256.Sum256(data) != id.Digest {
 		return nil, ingest.ErrIntegrity
 	}
 	if err := ctx.Err(); err != nil {

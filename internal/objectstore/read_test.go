@@ -24,6 +24,7 @@ type probeBody struct {
 	reader            io.Reader
 	readErr, closeErr error
 	read              int
+	requests          int
 	closed            bool
 }
 
@@ -39,6 +40,7 @@ func (b *probeBody) Close() error { b.closed = true; return b.closeErr }
 func probeStore(t *testing.T, status int, body *probeBody, header http.Header) *Store {
 	t.Helper()
 	client := sdkClient("https://fixture.invalid", &http.Client{Transport: transportFunc(func(r *http.Request) (*http.Response, error) {
+		body.requests++
 		return &http.Response{StatusCode: status, Header: header, Body: body, ContentLength: -1, Request: r}, nil
 	})})
 	// Explicit logging on the borrowed client must be disabled for every operation.
@@ -52,24 +54,27 @@ func probeStore(t *testing.T, status int, body *probeBody, header http.Header) *
 	}
 	return s
 }
-func TestBoundedReadIntegrityAndBodyClosure(t *testing.T) {
+func TestExactReadIntegrityAndBodyClosure(t *testing.T) {
 	readErr, closeErr := errors.New("private read failure"), errors.New("private close failure")
 	for _, tc := range []struct {
 		name, body              string
 		advertised              *int
-		max                     int
+		expectedBytes           int
 		readErr, closeErr, want error
 		maxRead                 int
 	}{
-		{name: "good", body: "right", max: 5, maxRead: 5},
-		{name: "empty", max: 0},
-		{name: "wrong hash", body: "wrong", max: 5, want: ingest.ErrIntegrity, maxRead: 5},
-		{name: "truncated", body: "righ", max: 5, want: ingest.ErrIntegrity, maxRead: 4},
-		{name: "excess", body: strings.Repeat("x", 1000), max: 5, want: ingest.ErrTooLarge, maxRead: 6},
-		{name: "oversized header", body: "right", advertised: newInt(6), max: 5, want: ingest.ErrTooLarge},
-		{name: "short header", body: "right", advertised: newInt(4), max: 5, want: ingest.ErrIntegrity, maxRead: 5},
-		{name: "read failure", max: 5, readErr: readErr, want: readErr},
-		{name: "close failure", body: "right", max: 5, closeErr: closeErr, want: closeErr, maxRead: 5},
+		{name: "good", body: "right", expectedBytes: 5, maxRead: 5},
+		{name: "empty", expectedBytes: 0},
+		{name: "wrong hash", body: "wrong", expectedBytes: 5, want: ingest.ErrIntegrity, maxRead: 5},
+		{name: "truncated", body: "righ", expectedBytes: 5, want: ingest.ErrIntegrity, maxRead: 4},
+		{name: "excess", body: strings.Repeat("x", 1000), expectedBytes: 5, want: ingest.ErrIntegrity, maxRead: 6},
+		{name: "oversized header", body: "right", advertised: newInt(6), expectedBytes: 5, want: ingest.ErrIntegrity},
+		{name: "short header", body: "right", advertised: newInt(4), expectedBytes: 5, want: ingest.ErrIntegrity},
+		{name: "matching hash short expectation", body: "right", expectedBytes: 4, want: ingest.ErrIntegrity, maxRead: 5},
+		{name: "matching hash long expectation", body: "right", expectedBytes: 6, want: ingest.ErrIntegrity, maxRead: 5},
+		{name: "empty expectation refuses bytes", body: "right", expectedBytes: 0, want: ingest.ErrIntegrity, maxRead: 1},
+		{name: "read failure", expectedBytes: 5, readErr: readErr, want: readErr},
+		{name: "close failure", body: "right", expectedBytes: 5, closeErr: closeErr, want: closeErr, maxRead: 5},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			b := &probeBody{reader: strings.NewReader(tc.body), readErr: tc.readErr, closeErr: tc.closeErr}
@@ -82,7 +87,7 @@ func TestBoundedReadIntegrityAndBodyClosure(t *testing.T) {
 			if tc.name == "empty" {
 				expected = nil
 			}
-			got, err := s.Read(t.Context(), object("project", expected), tc.max)
+			got, err := s.ReadExact(t.Context(), object("project", expected), tc.expectedBytes)
 			if tc.want == nil {
 				if err != nil || !bytes.Equal(got, expected) {
 					t.Fatalf("%q %v", got, err)
@@ -108,14 +113,16 @@ func TestControlXMLIsBoundedBeforeSDKDecode(t *testing.T) {
 		t.Fatalf("closed=%v bytes=%d", b.closed, b.read)
 	}
 }
-func TestConfiguredByteLimitAppliesEvenWhenCallerAllowsMore(t *testing.T) {
-	b := &probeBody{reader: strings.NewReader(strings.Repeat("x", 2000))}
-	s := probeStore(t, 200, b, make(http.Header))
-	if _, err := s.Read(t.Context(), object("p", nil), 4096); !errors.Is(err, ingest.ErrTooLarge) {
-		t.Fatal(err)
-	}
-	if b.read != 1025 || !b.closed {
-		t.Fatalf("bytes=%d closed=%v", b.read, b.closed)
+func TestExpectedLengthAboveConfiguredCapStopsBeforeObjectIO(t *testing.T) {
+	for _, expectedBytes := range []int{1025, 4096, int(^uint(0) >> 1)} {
+		b := &probeBody{reader: strings.NewReader("right")}
+		s := probeStore(t, 200, b, make(http.Header))
+		if data, err := s.ReadExact(t.Context(), object("p", []byte("right")), expectedBytes); data != nil || !errors.Is(err, ingest.ErrTooLarge) {
+			t.Fatalf("expected bytes %d: %q %v", expectedBytes, data, err)
+		}
+		if b.requests != 0 || b.read != 0 || b.closed {
+			t.Fatalf("requests=%d bytes=%d closed=%v", b.requests, b.read, b.closed)
+		}
 	}
 }
 func TestCreateReconciliationIntegrityFailure(t *testing.T) {

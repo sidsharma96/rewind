@@ -66,7 +66,7 @@ func (m *modelObjects) Create(ctx context.Context, id ObjectID, data []byte) err
 	return nil
 }
 
-func (m *modelObjects) Read(ctx context.Context, id ObjectID, maxBytes int) ([]byte, error) {
+func (m *modelObjects) ReadExact(ctx context.Context, id ObjectID, expectedBytes int) ([]byte, error) {
 	m.reads.Add(1)
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -80,9 +80,9 @@ func (m *modelObjects) Read(ctx context.Context, id ObjectID, maxBytes int) ([]b
 		m.mu.Unlock()
 		return nil, ErrObjectMissing
 	}
-	if len(data) > maxBytes {
+	if len(data) != expectedBytes {
 		m.mu.Unlock()
-		return nil, ErrTooLarge
+		return nil, ErrIntegrity
 	}
 	owned := bytes.Clone(data)
 	m.mu.Unlock()
