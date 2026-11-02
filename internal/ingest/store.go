@@ -94,16 +94,16 @@ type Authorizer interface {
 	AuthorizeRead(context.Context, string) (principal string, err error)
 }
 
-// Objects provides immutable content storage. Create succeeds only after complete
-// durable bytes are verified, or identical bytes already exist. It must never
-// overwrite different contents. Read must bound allocation and transferred bytes
-// by maxBytes, returning ErrTooLarge rather than a truncated successful result.
-// Missing objects return ErrObjectMissing, not the catalog-only ErrNotFound.
-// Implementations honor cancellation, are safe for concurrent calls and neither
-// retain nor mutate Create's arguments. Read transfers ownership of its result.
+// Objects provides immutable content storage. Create verifies complete durable
+// bytes or existing identical bytes; it never overwrites different contents.
+// ReadExact checks expected stored length and digest, within an independent cap.
+// Above-cap expectations return ErrTooLarge before I/O; mismatches ErrIntegrity.
+// Missing objects return ErrObjectMissing, not catalog-only ErrNotFound.
+// Calls honor cancellation, are concurrent-safe and do not retain or mutate input.
+// ReadExact transfers ownership of its complete, verified result.
 type Objects interface {
 	Create(ctx context.Context, id ObjectID, contents []byte) error
-	Read(ctx context.Context, id ObjectID, maxBytes int) ([]byte, error)
+	ReadExact(ctx context.Context, id ObjectID, expectedBytes int) ([]byte, error)
 }
 
 // Catalog enforces current grants and the immutable binding established through
@@ -247,7 +247,7 @@ func (s *Store) Read(ctx context.Context, id Identity) ([]byte, error) {
 	if ref.Size > s.limits.MaxRecordBytes {
 		return nil, ErrTooLarge
 	}
-	contents, err := s.objects.Read(ctx, ObjectID{Tenant: id.Tenant, Digest: ref.Digest}, ref.Size)
+	contents, err := s.objects.ReadExact(ctx, ObjectID{Tenant: id.Tenant, Digest: ref.Digest}, ref.Size)
 	if err != nil {
 		return nil, fmt.Errorf("read accepted record object: %w", err)
 	}
