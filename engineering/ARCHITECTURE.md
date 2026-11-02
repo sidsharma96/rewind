@@ -6,7 +6,11 @@ backends. Ownership registration, record publication and known-record lookup hav
 PostgreSQL adapter; immutable objects have an AWS SDK v2 R2 adapter. A composed
 PostgreSQL/controlled-HTTP test exercises saving, fresh reads and retries. A public
 capture format, typed acceptance and replay runtime remain unimplemented.
-Its tests model failures rather than establish remote durability.
+Its separate-process drill also kills/reaps a writer and removes its working
+directory before recovering accepted records through new clients. Controlled
+HTTP PUT-response loss and actual local PostgreSQL COMMIT-response loss are
+exercised. The storage services survive; this does not establish remote durability
+or ingest-machine replacement.
 An internal ownership-registration coordinator shares its binding contract with
 owner-aware publication and explicit project-reader lookups. Controlled capabilities
 exercise this integration; real credential verification remains absent.
