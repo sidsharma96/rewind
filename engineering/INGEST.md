@@ -7,8 +7,11 @@ and a remotely deployed catalog do not exist yet.
 The controlled experiment isolates ordering and error handling. A composed native
 test now joins Store, PostgreSQL registration/publication/lookup and the object SDK
 against a controlled HTTP peer. It covers discarded successful publication replies,
-fresh-client reads/retries and grant removal during upload. These tests establish
-neither provider durability nor recovery after real host loss. No public endpoint,
+fresh-client reads/retries and grant removal during upload. A separate-process
+drill now kills and reaps the writer, removes its private working directory, and
+recovers through a new process with surviving PostgreSQL and controlled HTTP
+services. These tests establish neither provider durability nor recovery after
+real host loss. No public endpoint,
 wire format or shared storage library is added.
 
 ## One saved record
@@ -173,6 +176,63 @@ of losing ingest-local state, not proof of remote recovery. Exercise before- and
 after-commit failures, concurrent duplicates and conflicts, cancellation, tenant
 isolation, oversized references, missing objects and corrupt bytes using explicit
 barriers rather than sleeps. Do not count this test double as a PostgreSQL adapter.
+
+### Writer-process recovery
+
+`internal/catalog/recovery_test.go:TestWriterProcessRecovery` uses the real catalog,
+coordinator, envelope/metadata codecs and object SDK. PostgreSQL and the controlled
+HTTP object service outlive the writer subprocess. Each case kills the writer,
+waits for its exit, removes its working directory, and starts a new test executable
+process with fresh clients. The replacement receives connection configuration,
+the known execution key and original synthetic producer inputs for retries, not a
+saved receipt, catalog reference, object map or writer-local files. The CLI still
+does not ingest. Trusted fixture principals do not verify real credentials.
+
+| Interruption | State resolved by the replacement |
+| --- | --- |
+| Both span and capture acknowledged | Both records retain their bytes, references, original attribution and times |
+| Conditional PUT stored, HTTP response disconnected | The adapter verifies with GET; accepted records survive writer termination |
+| Capture COMMIT response lost on the PostgreSQL connection | Store reports uncertain with no receipt; the committed capture is found after writer termination |
+| Capture uploaded, writer killed before Publish | Span remains accepted; capture lookup is absent despite the retained object; explicit retry creates its first acceptance |
+
+The local PostgreSQL fault proxy is armed at the capture-publication barrier. It
+observes `CommandComplete(COMMIT)` and idle `ReadyForQuery`, withholds both and
+disconnects. This exercises pgx's actual commit-response error path rather than
+discarding a successful Go method result. It is limited to explicitly plaintext
+loopback/Unix disposable servers, never a TLS downgrade. The HTTP peer likewise
+disconnects after storing an actual conditional PUT. No failure point relies on a
+sleep. Child processes are killed and joined on failure; proxy connection pairs,
+message bodies and lifetimes are bounded and their goroutines are joined.
+
+In every case a changed opaque span body conflicts and leaves the accepted span
+unchanged; its unreferenced object is retained. A further process using revoked
+reader/writer grants is refused without object requests, and original receipts
+remain unchanged after the test restores the grants. Span and capture still have
+independent acceptance; this does not introduce an atomic pair or batch.
+
+The fixture counts HTTP body bytes read/written, excluding headers, protocol/SDK
+buffers and guaranteed network delivery. For its 187-byte gzip span envelope and
+12-byte plain capture envelope, the initial writes use four GETs, two PUTs, 199
+request-body bytes and 273 response-body bytes. Replacement reads, exact retries,
+one conflicting upload and a final preserved-span read use seven GETs and one PUT,
+188 request-body bytes and 810 response-body bytes. Before-publication crash uses
+one fewer GET and 12 fewer response bytes because catalog absence stops the read.
+The first two authorized reads alone require two GETs when both records exist.
+These are recorded synthetic operation counts, not timings or production estimates.
+
+This establishes a process boundary with surviving test services. The test parent
+still owns the in-memory object service, PostgreSQL remains available, and both
+may share the same physical host. It does not establish ingest-machine loss,
+remote catalog placement, storage-service loss, real R2/provider faults, database
+failover/restore or zero-loss backups. A live drill remains necessary for those
+deployment claims. The smaller existing in-process test remains the baseline.
+
+PostgreSQL 16's [message-flow contract](https://www.postgresql.org/docs/16/protocol-flow.html#PROTOCOL-FLOW-SIMPLE-QUERY)
+defines the completion/ready boundary; its
+[commit settings](https://www.postgresql.org/docs/16/runtime-config-wal.html#GUC-SYNCHRONOUS-COMMIT)
+separate WAL flush from other durability modes. The proxy uses the existing
+pgx v5.11.0 `pgproto3.Frontend.Receive` and `SetMaxBodyLen`, not a new wire parser.
+These mechanisms establish the fault placement, not provider durability.
 
 Before any real success response, verify immutable R2 writes, checksum/size handling,
 PostgreSQL transactions and synchronous durability settings against deployed services.

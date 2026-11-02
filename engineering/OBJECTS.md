@@ -96,9 +96,11 @@ is extracted until both applications have exercised their own recovery contract.
 ### Extraction checkpoint
 
 The comparison against Concordance revision
-`051ad3858f18f50b03362933b6c9efbc2edbe398`, `internal/objectstore/store.go`
+`10a92299c32e7995e74cfd9cbc43a11a1dcc869b`, `internal/objectstore/store.go`
 (`EnsureVerified`, `Read`), finds the same strict GET/conditional-PUT/GET baseline.
-This is a source comparison, not a new joint recovery test or approval to extract.
+This is a source comparison, not a joint recovery test or approval to extract.
+Rewind's compared implementation starts at `da4e7c220f512404635029349d26b2ae1b13da32`;
+the process drill adds test coverage around its unchanged object/catalog contracts.
 
 | Boundary | Rewind | Concordance |
 | --- | --- | --- |
@@ -106,7 +108,16 @@ This is a source comparison, not a new joint recovery test or approval to extrac
 | Read length | Upper bound; Store checks exact catalog size | Reference carries exact size, checked by adapter |
 | Admission and timeout | Adapter bounds active calls and elapsed time | Caller owns admission and supplies a deadline |
 | Publication | Record catalog must accept identity/owner/reference | Catalog publishes an entire generation |
-| Recovery evidence | Fresh object client observed; combined catalog recovery missing | Fresh object client observed; complete generation recovery experiment still open |
+| Recovery evidence | Separate writer killed/reaped, working directory removed; replacement finds committed span/capture through PostgreSQL and controlled objects | Generation publication, fresh SQL/object clients, search/quote exercised; writer-process loss and network-COMMIT loss remain open |
+
+Rewind's process drill observes both acknowledged acceptance and an actual lost
+PostgreSQL COMMIT response, plus a disconnected stored PUT and a crash before
+publication. It counts HTTP bodies/requests and checks current permission refusal
+before object access. The controlled HTTP service and database survive, on the
+same test host: this is not real R2/host-loss recovery. See
+[the recovery experiment](INGEST.md#writer-process-recovery) for sequence, counts
+and limits. Concordance's `engineering/experiments/generation-publication.md`
+likewise distinguishes fresh-client recovery from host-loss/provider evidence.
 
 Concordance also has verification receipts and a reuse component above its strict
 object path. Those do not establish Rewind's authorization, retention or acceptance

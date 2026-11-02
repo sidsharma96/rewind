@@ -26,7 +26,11 @@ object adapter in disposable-database/controlled-HTTP tests. A public capture fo
 typed acceptance, real credential verification and replay remain unimplemented.
 The private `rewind-dev` bucket exists; its scoped live probe passes
 creation/retry, conditional overwrite rejection, locally discarded PUT replies and
-fresh-client reads. This is not complete ingest-host-loss or catalog recovery.
+fresh-client reads. A separate-process drill kills/reaps the writer and removes
+its working directory before fresh-process read/retry, with controlled
+PUT-response loss and actual local PostgreSQL COMMIT-response loss. Its surviving
+test services do not establish machine loss, remote catalog placement or provider
+durability. Complete ingest-host-loss and catalog recovery remain untested.
 Do not claim those tests establish remote durability.
 
 ## Design and implementation
