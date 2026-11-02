@@ -1,5 +1,11 @@
 # Working on Rewind
 
+The canonical project outcome is in `engineering/ARCHITECTURE.md#long-term-outcome`:
+multiple agents contribute independently owned records to one shared trace that an
+authorized reader can inspect and use for recorded playback. Use that outcome to
+justify milestones and assess completion. A single-record checkpoint is intermediate
+progress toward it; keep the broader storage-engine learning goals explicit too.
+
 Preserve user changes. Use plain, descriptive branch names without an agent prefix.
 After each confirmed PR merge, delete its upstream and local feature branches and
 prune stale tracking refs. Verify the branch tip still matches the merged PR head;

@@ -15,6 +15,64 @@ An internal ownership-registration coordinator shares its binding contract with
 owner-aware publication and explicit project-reader lookups. Controlled capabilities
 exercise this integration; real credential verification remains absent.
 
+## Long-term outcome
+
+Rewind is a multiplayer trace store and recorded-playback system. Multiple agents
+contribute their own operation records to one shared trace. An authorized reader
+can inspect the agents' work together, follow reported parent and link relationships,
+find available captured inputs and results, and play back saved results for a
+supported workload. This is the intended outcome; the internal components described
+above do not yet deliver that complete experience.
+
+Use one acceptance scenario to keep implementation steps connected to that outcome:
+
+1. Alice and Bob are different agent instances working in one project. Each has
+   registered executions and submits its own spans into the same trace. Each span
+   describes one operation; a separately accepted capture holds its exact bodies.
+   A permitted collector can deliver for either agent under explicit scoped authority.
+2. Alice cannot claim or overwrite Bob's execution by learning its IDs. A retry
+   of an accepted record preserves its original acceptance; conflicting contents
+   do not replace it. Owning or writing an execution grants no implicit read access.
+3. Success covers the accepted record's remotely saved bytes and the catalog
+   metadata needed to find them. A new authorized reader can find that record
+   after acknowledgment, including after replacement of the ingest machine.
+   Tests with surviving local services are intermediate evidence for this goal.
+4. A reader with project permission can retrieve both agents' accepted records and
+   inspect their relationships in one trace. Records and captures may arrive late
+   or independently. Show available evidence and unavailable relationships/captures
+   explicitly; finding some spans must not claim the entire trace is complete.
+   Reported timestamps alone cannot establish a global causal order.
+5. Recorded playback uses the available saved results for the supported workload.
+   Missing or redacted capture remains explicit. Running a model or application
+   again is a separate operation with its own adapter and comparison contract.
+
+This scenario is a completion target, not a claim that producers, authentication,
+trace assembly, an inspection interface, playback or host-loss recovery exist now.
+The precise first-release interface, supported playback workload, operating limits
+and deployment/recovery acceptance tests still need concrete scopes before release.
+
+The learning outcome remains part of the project: implement and explain storage
+formats, buffering and indexing choices, compaction, recovery and query algorithms
+against concrete workloads and credible baselines, counting memory, requests and
+transferred bytes as well as CPU work. A useful first release is an intermediate
+milestone; it does not silently remove later agreed learning goals. The roadmap's
+unselected mechanisms and illustrative performance numbers are not completion gates.
+
+Separate immutable lifecycle events remain a required extension direction for
+reported start/progress evidence. Ended spans alone do not supply live progress.
+Agent orchestration, tool gateways and run stopping belong to separately scoped
+extensions; shared tracing does not itself implement those capabilities. Likewise,
+Concordance's shared object library is a bounded reuse direction. It must preserve
+the application outcome above and justify its concrete consumer or maintenance
+benefit; a shared cache, service or engine is not selected by that direction.
+
+The proposed next implementation checkpoint is typed ended-span acceptance joined
+to authorized saving and fresh decoding. Its integration example should retain the
+two-agent shared-trace context and refuse identity/owner mismatches. It remains an
+internal milestone until real credentials and the remaining product path exist.
+Define its input, observable result and failure checks before implementation;
+preserve this long-term scenario when choosing that narrower scope.
+
 ## Agreed requirements
 
 Rewind is a standalone trace store and replay project. Accepted ingest batches must
