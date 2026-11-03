@@ -5,7 +5,8 @@ help/version only. The internal ingest coordinator runs against controlled test
 backends. Ownership registration, record publication and known-record lookup have a native-pgx
 PostgreSQL adapter; immutable objects have an AWS SDK v2 R2 adapter. A composed
 PostgreSQL/controlled-HTTP test exercises saving, fresh reads and retries. The internal typed ended-span coordinator now validates, saves and reads known
-span records, including equivalent differently encoded retries. A public capture
+span records, including equivalent differently encoded retries. An internal bounded
+trace reader now discovers final spans from project and trace ID alone. A public capture
 format, credential verification and replay runtime remain unimplemented.
 Its separate-process drill also kills/reaps a writer and removes its working
 directory before recovering accepted records through new clients. Controlled
@@ -71,9 +72,42 @@ The internal typed ended-span checkpoint joins checked one-span payloads to
 owner-aware publication and fresh decoding. Its native composition test saves two
 independently owned agents' records in one trace; its process drill replaces the
 writer and recovers a typed failed span. These use controlled principals and
-surviving local services. They leave real authentication, bounded trace enumeration,
-capture-body acceptance and actual host/catalog recovery open; they do not deliver
+surviving local services. A separate trace-ID-only process drill now discovers both
+agents' final spans after both writers are killed/reaped and their working directories
+removed. They leave real authentication, capture-body acceptance and actual host/catalog recovery open; they do not deliver
 the complete acceptance scenario above.
+
+### Current trace-read pages
+
+`ingest.TraceReader` uses the same coordinator admission slot as typed span writes
+and known-span reads. Each request checks current project-reader permission and
+seeks accepted execution IDs in increasing span-ID byte order through the catalog.
+The cursor is a scope-bound position, not permission or frozen membership. Late
+records ahead of it may appear on a later page; late records behind it require a
+new scan from the beginning. Exhausting the observed keys never establishes trace
+completeness or causal order. Fixed-membership export/playback selection remains
+a separate future consumer contract. This live-page choice does not relax future
+cleanup/reader-lifetime obligations for immutable accepted references.
+
+The page bounds candidate executions, aggregate stored object bytes and total
+blocking time. Capture-only and retained expired identities count as candidates;
+registration alone does not. Each candidate's final span goes through current
+permission and saved-expiry lookup. Available items carry an owned decoded span
+and the exact original receipt used for verification; unavailable items explicitly
+mean no final span at lookup or confirmed final-span expiry. Missing accepted
+objects, corrupt bytes, unsupported formats and operational failures fail the
+whole page with no partial results or continuation. No capture bodies are fetched.
+
+The existing `(project, trace_id, span_id, kind)` primary key supports distinct-key
+seeking across both retained kinds. Native tests record an ordered index-only
+scan under PostgreSQL 16.13, without timings. Logical limits do not hard-bound
+physical database work: planner choices, dead rows and lock waits still matter.
+Sequential GETs cap call count and stored bytes; per-span codec limits multiplied
+by the candidate cap bound expansion/graph work, not exact heap use or hard CPU
+time. A span that cannot fit an empty page is an explicit limit error; a span
+that only exceeds remaining space is left for continuation. No production limits
+or public token encoding are selected. Revisit fixed membership when a required
+consumer needs reproducible resumable selection rather than refreshed inspection.
 
 ## Agreed requirements
 

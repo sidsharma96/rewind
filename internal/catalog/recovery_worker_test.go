@@ -19,6 +19,7 @@ import (
 	"github.com/sidsharma96/rewind/internal/ingest"
 	"github.com/sidsharma96/rewind/internal/objectstore"
 	"github.com/sidsharma96/rewind/internal/record"
+	"github.com/sidsharma96/rewind/internal/traceid"
 	tracepb "go.opentelemetry.io/proto/otlp/trace/v1"
 )
 
@@ -29,6 +30,8 @@ type recoveryConfig struct {
 	Role, Fault                          string
 	Registration                         ingest.Registration
 	CaptureAccepted                      bool
+	TraceProject                         string
+	TraceID                              traceid.Trace
 }
 
 type recoveryEvent struct {
@@ -173,6 +176,9 @@ func TestRecoveryWorker(t *testing.T) {
 	}
 	authorizer := publicationAuthorizer{project: config.Registration.Execution.Tenant,
 		writer: ingest.Attribution{Owner: config.Registration.Owner, SubmittedBy: "collector"}}
+	if config.Role == "trace-reader" || config.Role == "trace-denied" {
+		authorizer.project = config.TraceProject
+	}
 	store, err := ingest.New(authorizer, objects, catalog, ingest.Limits{MaxRecordBytes: 4096, MaxActive: 2})
 	if err != nil {
 		t.Fatal(err)
@@ -180,6 +186,10 @@ func TestRecoveryWorker(t *testing.T) {
 	spans, err := ingest.NewSpans(authorizer, objects, catalog, ingest.Limits{MaxRecordBytes: 4096, MaxActive: 2}, nativeSpanCodec(t, 1))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if config.Role == "trace-reader" || config.Role == "trace-denied" {
+		traceRecoveryRead(t, ctx, spans, config, out)
+		return
 	}
 	bodies, codec := recoveryBodies(t, config.Registration)
 	ids := [2]ingest.Identity{}
@@ -306,4 +316,39 @@ func TestRecoveryWorker(t *testing.T) {
 	default:
 		t.Fatal("unknown recovery worker role")
 	}
+}
+
+func traceRecoveryRead(t *testing.T, ctx context.Context, spans *ingest.Spans, config recoveryConfig, out *json.Encoder) {
+	// These roles receive project/trace only, with a zero Registration. They
+	// cannot infer enumeration from producer inputs or accepted references.
+	if config.Registration != (ingest.Registration{}) {
+		t.Fatal("trace reader received producer identity")
+	}
+	reader, err := ingest.NewTraceReader(spans, ingest.TraceLimits{MaxCandidates: 1, MaxStoredBytes: 4096, OperationTimeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cursor ingest.TraceCursor
+	var receipts [2]ingest.Receipt
+	for i := 0; i < 2; i++ {
+		page, err := reader.ReadTrace(ctx, config.TraceProject, config.TraceID, cursor)
+		if config.Role == "trace-denied" {
+			if !errors.Is(err, ingest.ErrDenied) || len(page.Items) != 0 || !page.Next.IsZero() {
+				t.Fatal("revoked trace reader accessed state")
+			}
+			recoverySend(t, out, recoveryEvent{Phase: "trace-denied"})
+			return
+		}
+		if err != nil || len(page.Items) != 1 || page.Items[0].State != ingest.TraceAvailable || page.Next.IsZero() != (i == 1) {
+			t.Fatal("trace-only recovery page failed")
+		}
+		item := page.Items[0]
+		trace, span, idErr := item.Span.IDs()
+		if idErr != nil || trace != config.TraceID || span != item.Execution.Span || item.Receipt.Reference.Identity.Span != span || item.Span.Metadata.Name != "batch-worker" || item.Span.Metadata.GetStatus().GetCode() != tracepb.Status_STATUS_CODE_ERROR {
+			t.Fatal("trace-only recovery changed evidence")
+		}
+		receipts[i] = item.Receipt
+		cursor = page.Next
+	}
+	recoverySend(t, out, recoveryEvent{Phase: "trace-recovered", Receipts: receipts})
 }
