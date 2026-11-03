@@ -2,21 +2,105 @@
 
 Status: the user selected a small explicit Rewind capture path first, with an
 OpenTelemetry-compatible internal record and a later OTLP adapter. No public capture
-schema, saved format, receiver or complete record normalizer is implemented. The selected
+schema or receiver is implemented. Internal typed ended-span admission and its
+version-1 saved payload are implemented; capture body schemas remain open. The selected
 span-metadata model reuses OpenTelemetry's generated Go types, including resource,
 scope and typed attributes. Rewind owns validation, normalization, exact capture
 bodies, ownership and the saved format. The narrow JSON adapter below is selected;
-a complete record schema remains open. The selected saved layout is versioned framing followed by JSON metadata and exact raw request
+the capture record schema remains open. The selected saved layout is versioned framing followed by JSON metadata and exact raw request
 and response bytes. Compression uses a size gate, then keeps gzip only if smaller;
 the selected starting threshold is configurable with a 32 KiB default for the
 complete hybrid record before compression or an outer encoding marker. The selected
 gzip starting setting is configurable BestSpeed. The internal envelope framing is now implemented by `record.EnvelopeCodec` below;
-complete kind-specific payload schemas, metadata/body-state rules and production
-byte limits remain open. The current
-ingest coordinator receives opaque bytes and does not know OpenTelemetry types.
+`record.SpanCodec` implements its final-span payload and `ingest.Spans` the
+internal typed save/read/retry path. Capture-body states/schemas and production byte
+limits remain open. The older `ingest.Store` still receives opaque bytes.
 An isolated [encoding experiment](CAPTURE-ENCODING.md) compares full JSON with
 JSON metadata and raw bodies, including compression. The user selected the hybrid
-layout from its results; its test-only codecs are not integrated with acceptance.
+layout from its results. Its body experiments remain test-only; the runtime span
+codec now uses the existing metadata JSON adapter and envelope.
+
+## Typed final-span acceptance
+
+`record.SpanCodec` defines one internal version-1 span payload: the existing JSON
+metadata encoding of exactly one ResourceSpans, one ScopeSpans and one Span, with
+inline resource/scope context and both schema URLs, under the span envelope tag.
+Decode requires those exact cardinalities rather than silently selecting the first
+record in a batch. Span and parent/link ID widths, nonzero execution IDs, supported
+bounded graphs, unknown-wire refusal and ordered unique attributes are checked.
+It preserves the selected numeric, flags, floating, timestamp, optional-shell and
+unavailable-link evidence rules. This is a supported internal representation, not
+a general OTLP semantic-conformance validator or a public capture endpoint.
+
+Blank operation names remain blank and mean unknown descriptive evidence. Never
+insert a placeholder into saved metadata; any eventual display fallback must be
+identified as presentation. A later nonempty name under the same execution is
+changed retry content. Revisit if a required consumer cannot safely expose an
+unknown name, bringing that consumer and concrete failure before changing admission.
+As inspected in November 2026, OTLP's pinned
+[Span.name definition](https://github.com/open-telemetry/opentelemetry-proto/blob/a8951735f7801e8adfaec5c0ace9262771cfec6e/opentelemetry/proto/trace/v1/trace.proto#L138-L149)
+calls for nonempty names while defining empty as unknown. Jaeger's pinned
+[empty-name sanitizer](https://github.com/jaegertracing/jaeger/blob/2bef72022bbad6c692ac3aaf6c6a372c4b495b86/internal/jptrace/sanitizer/emptyspanname.go#L20-L44)
+substitutes a label before trace storage. Rewind preserves the report because its
+workload retains execution evidence; that separation of stored facts and eventual
+display labels is our design, not Jaeger's behavior or an OTLP admission mandate.
+Requiring a name would catch omissions earlier but refuse otherwise useful records.
+
+Prepare bounds/checks borrowed input before explicitly cloning it, normalizes only
+the owned clone, encodes metadata then the envelope, and returns owned metadata
+and stored bytes or no partial results. Borrowed descendants must remain stable
+throughout. Decode returns an independently owned graph after framing, parsing,
+shape, identity and ordered-attribute checks; it never repairs saved metadata.
+Callers supply independent positive metadata/graph/depth/stored/expanded bounds;
+byte caps are not an exact peak-memory or elapsed-time guarantee.
+
+`ingest.Spans.WriteSpan` takes the expected project/trace/span execution and an
+explicit EndedSpan declaration. It enters the underlying Store's nonwaiting active
+limit before graph work, matches IDs, obtains trusted writer attribution and calls
+writer-scoped catalog inspection before preparation. No input owner label grants
+authority. New records follow immutable object create then catalog publication.
+The ordinary opaque Store retains exact-byte behavior, including for synthetic
+capture fixtures. No arbitrary legacy opaque bytes become typed or authorized.
+
+An existing exact reference resolves without object I/O. Different stored bytes
+require one exact-size/digest accepted-object read outside catalog locks, bounded
+span decoding, key cross-checking and MetadataCodec.Compare. Only trusted coordinator
+code sees those accepted bytes; producer write access grants no reader permission.
+InspectSpan returns an original receipt or absence; PublishSpan can discover a
+concurrent winner that needs comparison; ResolveSpan rechecks current owner/grant,
+run, saved expiry and the precise compared reference under the existing lock order.
+Equal returns the original duplicate receipt; different conflicts. Changed or absent
+comparison references, read/close/parse errors and cancellation cannot become
+comparison outcomes. A racing absent write performs at most one winner comparison.
+Original bytes, attribution, acceptance and expiry never change on a retry. Lost
+publication replies remain uncertain; uncertain uploads are retained.
+
+`ReadSpan` requires explicit project-reader permission, reads a verified catalog
+reference through the same admission bound, decodes the span kind and checks the
+saved IDs against the requested execution before returning an owned graph. It
+looks up one known record, not all operations in a trace, and makes no capture or
+trace-completeness claim. Tenant and acceptance authority remain in the catalog.
+
+For existing differently encoded records this adds one comparison GET transferring
+the accepted stored bytes; identical references add no object request. New records
+retain the object adapter's pre-read/conditional PUT/verification sequence. These
+are bounded operation counts, not latency measurements. Preparation copies bounded
+metadata and sorts keyed attributes using the existing algorithm; active admission
+covers preparation, JSON/envelope buffers, accepted-object decoding and comparison.
+No workers, queues, new cache, shared engine, deadline policy or logical digest
+column is added. Encoding then calling opaque Write is simpler but would falsely
+conflict on equivalent presence/compression representations. Revisit the selected
+comparison strategy for measured comparison frequency and object costs.
+
+Native tests exercise two registered owners in one shared trace, separate reader
+grants, exact and different-encoding retries, conflicts, concurrent collectors and
+revocation/run/expiry/reference changes before final resolution. The process drill
+submits a typed failed span and separately opaque capture, kills/reaps the writer,
+removes its directory and decodes through fresh process clients, including lost
+stored-PUT and actual typed PostgreSQL COMMIT responses. Surviving local services
+and controlled principals do not establish machine loss, provider durability,
+remote catalog recovery or real credential verification. Public capture-body
+admission, trace enumeration, consumers and playback remain later work.
 
 ## Saved-object kind discrimination
 
@@ -40,14 +124,15 @@ kind explicitly; do not cast its internal enum to a wire tag.
 
 The version selects the whole saved-format revision, including the prefix and
 kind-specific payload schemas together. A future incompatible change to either
-requires an explicit supported-version decision. This checkpoint implements
-framing over opaque payload bytes, not those payload schemas or typed admission;
-synthetic composed-test payloads do not freeze a public format. Production byte
+requires an explicit supported-version decision. EnvelopeCodec frames bytes without
+parsing their payload; SpanCodec now supplies the internal version-1 span schema.
+Earlier synthetic composed-test payloads do not freeze a public format. Production byte
 limits and the capture schema remain open. Span and capture remain independent
 records. Future lifecycle events need their separate identities and contracts;
 reserving the ability to distinguish them does not implement or accept them.
-No accepted object is rewritten by this decision. Typed preparation, kind-specific
-payload decoding and logical retry resolution still need implementation. Encode borrows stable prepared bytes and returns an
+No accepted object is rewritten. SpanCodec and ingest.Spans now implement typed
+final-span preparation, payload decoding and logical retry resolution. Capture-body
+schemas remain separate. Envelope Encode borrows stable prepared bytes and returns an
 independent stored buffer. Decode expects caller-verified size/digest and a
 catalog-authorized kind, returning independent payload bytes or nil on every
 error. It checks the whole stored cap, minimum header length and magic, supported
@@ -72,7 +157,8 @@ expansion depend on bounded input/output. The native composition test exercises
 both encodings through real catalog publication, fresh authorized reads and the
 controlled object peer, then checks the expected kind before metadata decoding.
 It also preserves original encoded retries, separate capture objects and conflicts.
-Store remains opaque; its different-encoded-bytes comparison path is still absent.
+Store remains opaque; the separate Spans coordinator compares different encodings
+for typed final-span retries.
 
 The simpler alternative supplies kind only from catalog/request context and uses
 separate typed decoders. That can be safe when every reader retains the correct
@@ -173,8 +259,8 @@ join their output by default; its single-member mode supports formats needing
 separate stream boundaries. Those mechanisms support both alternatives. Our choice
 keeps standard reader behavior because Rewind needs one logical payload, not one
 compression part. Runtime envelope and lab tests check joined output, whole-input/combined-output
-limits and refusal before payload parsing when a later member fails. Kind-specific
-runtime payload parsing is still unimplemented. Byte caps alone do not bound elapsed CPU or peak memory;
+limits and refusal before payload parsing when a later member fails. SpanCodec parses final-span
+payloads; capture payload parsing remains open. Byte caps alone do not bound elapsed CPU or peak memory;
 empty members and headers consume stored bytes even when they add no output.
 
 ## Two entrances to one acceptance path
@@ -185,9 +271,9 @@ configured with explicit positive byte, traversal-work and nesting limits. Its
 existing bounded guard, JSON adapter, keyed ordering and direct comparison rules.
 `Check` is a structural/representation guard, not complete semantic admission;
 `Decode` parses owned metadata and does not bypass later checking. The copying
-comparison remains a separate lab oracle. No default production limits, saved
-public OTLP receiver or typed acceptance API follows from this move. The separate
-`EnvelopeCodec` now handles saved-object framing, not kind-specific schemas.
+comparison remains a separate lab oracle. The move alone selects no production limits or public OTLP receiver. The separate
+`EnvelopeCodec` handles framing; `SpanCodec` now defines the internal final-span
+payload and the typed coordinator integrates acceptance.
 
 The codec owns no connections, workers or mutable request state. Encoding and
 comparison borrow stable inputs; decoding returns an independent graph. Owned
@@ -292,8 +378,8 @@ The maintained lab encodes individual records with both grouping URLs and Resour
 entity references, then decodes them after original input mutation. A property
 fuzzer compares selected reconstruction against cloning/pruning the input, with
 individual codec round trips for encodable selections. That is memory/format evidence, not host-loss
-or remote durability evidence. Full semantic/equality rules,
-record framing/version and runtime typed admission remain open.
+or remote durability evidence. SpanCodec and the typed coordinator now use this association for bounded internal
+final-span admission; capture schemas and public receiver semantics remain open.
 
 ## Explicit ended-span declaration
 
@@ -320,8 +406,8 @@ authenticated capability or complete validated record. No IDs are cached beside
 mutable metadata and no mandatory deep copy is introduced. The encoding lab takes
 a declaration, reconstructs its one-span packet, and produces independently owned
 bytes; a declaration does not bypass unknown-field or other encoder checks.
-Runtime acceptance still needs a bounded validated record/codec and authorization
-integration. The opaque `Store.Write` is unchanged and must remain internal.
+The internal typed coordinator now joins bounded SpanCodec preparation to current
+owner-aware publication. The opaque `Store.Write` remains internal.
 
 Declaration and view access use O(1) work/space, with fixed 24-byte identity checks
 in the declaration, no graph traversal, catalog/object request or persistent
@@ -525,8 +611,8 @@ Default strict ProtoJSON decoding already refuses unknown JSON field names in th
 metadata decoder; it must not enable `DiscardUnknown` for saved metadata. This
 is different from OTLP JSON reception, whose standard requires ignoring unknown
 transport fields. A future adapter must document that projection and cannot claim
-the JSON saved record preserves every original transport field. No adapter or real
-typed record acceptance exists yet. The encoder returns `record.ErrMetadataUnsupported`
+the JSON saved record preserves every original transport field. A public OTLP adapter is absent; internal typed final-span acceptance now uses
+these strict saved-metadata rules. The encoder returns `record.ErrMetadataUnsupported`
 for visited unknown wire metadata; public error mapping remains unselected.
 `otlp_unknown_test.go` checks 25 message positions, direct injection and a real
 binary-protobuf parse, default JSON refusal and unchanged input. The raw ProtoJSON
@@ -720,8 +806,8 @@ paired decoder refuses negative, out-of-range, fractional or wrong-type flags
 without returning a partial result; positive controls include values above int32
 range. Unknown bits do not bypass unsupported-wire refusal on either message.
 `FuzzOTLPFlags` varies both uint32 fields against exact whole-message round trips.
-These checks are lab representation evidence; runtime typed admission, consumer
-interpretation, full equality/version rules and typed publication integration remain unimplemented.
+These are representation checks. Typed final-span preparation and retry comparison
+now use the codec; display/replay interpretation and future-version rules remain open.
 
 The simplest alternative refuses records containing unsupported flag bits. It
 limits the accepted domain and avoids normal storage writes for refused attempts,

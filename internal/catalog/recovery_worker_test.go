@@ -53,7 +53,7 @@ type recoveryPublication struct {
 }
 
 func (c *recoveryPublication) Publish(ctx context.Context, ref ingest.Reference, a ingest.Attribution) (ingest.Receipt, error) {
-	if ref.Identity.Kind == ingest.CaptureRecord && (c.fault == "before-publish" || c.fault == "commit-reply") {
+	if ref.Identity.Kind == ingest.CaptureRecord && c.fault == "before-publish" {
 		phase := "publishing"
 		if c.fault == "before-publish" {
 			phase = "uploaded"
@@ -65,6 +65,28 @@ func (c *recoveryPublication) Publish(ctx context.Context, ref ingest.Reference,
 		}
 	}
 	return c.Catalog.Publish(ctx, ref, a)
+}
+
+// Lose the typed span's actual COMMIT reply after capture has already committed.
+func (c *recoveryPublication) PublishSpan(ctx context.Context, ref ingest.Reference, a ingest.Attribution) (ingest.Receipt, bool, error) {
+	if c.fault == "commit-reply" {
+		recoverySend(c.t, c.out, recoveryEvent{Phase: "publishing"})
+		var command recoveryEvent
+		if err := c.in.Decode(&command); err != nil || !command.Resume {
+			return ingest.Receipt{}, false, errors.New("publication barrier interrupted")
+		}
+	}
+	return c.Catalog.PublishSpan(ctx, ref, a)
+}
+
+func recoveryEnded(t *testing.T, r ingest.Registration) record.EndedSpan {
+	t.Helper()
+	view := record.Span{Metadata: &tracepb.Span{TraceId: r.Execution.Trace[:], SpanId: r.Execution.Span[:], Name: "batch-worker", StartTimeUnixNano: 1, EndTimeUnixNano: 2, Status: &tracepb.Status{Code: tracepb.Status_STATUS_CODE_ERROR, Message: "synthetic failed call"}, Links: []*tracepb.Span_Link{{}}}}
+	ended, err := view.DeclareEnded()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ended
 }
 
 func sameRecoveryReceipt(a, b ingest.Receipt) bool {
@@ -80,7 +102,7 @@ func recoveryBodies(t *testing.T, r ingest.Registration) ([2][]byte, record.Enve
 	if err != nil {
 		t.Fatal(err)
 	}
-	span, err := codec.Encode(record.SpanObject, spanPayload(t, fixture{r: r}))
+	_, span, err := nativeSpanCodec(t, 1).Prepare(recoveryEnded(t, r))
 	if err != nil || span[6] != 1 {
 		t.Fatal("recovery span fixture must use gzip")
 	}
@@ -145,13 +167,17 @@ func TestRecoveryWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var catalog ingest.Catalog = c
+	var catalog ingest.SpanCatalog = c
 	if config.Role == "writer" {
 		catalog = &recoveryPublication{Catalog: c, fault: config.Fault, in: in, out: out, t: t}
 	}
 	authorizer := publicationAuthorizer{project: config.Registration.Execution.Tenant,
 		writer: ingest.Attribution{Owner: config.Registration.Owner, SubmittedBy: "collector"}}
 	store, err := ingest.New(authorizer, objects, catalog, ingest.Limits{MaxRecordBytes: 4096, MaxActive: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	spans, err := ingest.NewSpans(authorizer, objects, catalog, ingest.Limits{MaxRecordBytes: 4096, MaxActive: 2}, nativeSpanCodec(t, 1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,9 +189,20 @@ func TestRecoveryWorker(t *testing.T) {
 	}
 	switch config.Role {
 	case "writer":
-		for i, id := range ids {
-			receipt, err := store.Write(ctx, id, bodies[i])
-			if i == 1 && config.Fault == "commit-reply" {
+		order := []int{0, 1}
+		if config.Fault == "commit-reply" {
+			order = []int{1, 0}
+		}
+		for _, i := range order {
+			id := ids[i]
+			var receipt ingest.Receipt
+			var err error
+			if i == 0 {
+				receipt, err = spans.WriteSpan(ctx, config.Registration.Execution, recoveryEnded(t, config.Registration))
+			} else {
+				receipt, err = store.Write(ctx, id, bodies[i])
+			}
+			if i == 0 && config.Fault == "commit-reply" {
 				if !errors.Is(err, ingest.ErrUncertain) || receipt != (ingest.Receipt{}) {
 					t.Fatal("lost wire COMMIT response did not return uncertainty and empty receipt")
 				}
@@ -184,7 +221,20 @@ func TestRecoveryWorker(t *testing.T) {
 	case "replacement":
 		var receipts [2]ingest.Receipt
 		for i, id := range ids {
-			got, err := store.Read(ctx, id)
+			var got []byte
+			var err error
+			if i == 0 {
+				view, readErr := spans.ReadSpan(ctx, config.Registration.Execution)
+				if readErr != nil {
+					t.Fatal("replacement typed read failed")
+				}
+				trace, span, idErr := view.IDs()
+				if idErr != nil || trace != id.Trace || span != id.Span || view.Metadata.Name != "batch-worker" || view.Metadata.GetStatus().GetCode() != tracepb.Status_STATUS_CODE_ERROR {
+					t.Fatal("typed replacement changed registered failed-span evidence")
+				}
+			} else {
+				got, err = store.Read(ctx, id)
+			}
 			accepted := i == 0 || config.CaptureAccepted
 			var original ingest.Receipt
 			if !accepted {
@@ -192,41 +242,27 @@ func TestRecoveryWorker(t *testing.T) {
 					t.Fatal("unpublished capture object became accepted state")
 				}
 			} else {
-				if err != nil || !bytes.Equal(got, bodies[i]) {
+				if i == 1 && (err != nil || !bytes.Equal(got, bodies[i])) {
 					t.Fatal("replacement did not recover original verified bytes")
 				}
-				kind := record.SpanObject
 				if i == 1 {
-					kind = record.CaptureObject
-				}
-				payload, err := codec.Decode(kind, got)
-				if err != nil {
-					t.Fatal("replacement envelope failed")
-				}
-				if i == 1 {
-					if !bytes.Equal(payload, []byte{0, 255, 'q', '\n', 'r'}) {
+					payload, decodeErr := codec.Decode(record.CaptureObject, got)
+					if decodeErr != nil || !bytes.Equal(payload, []byte{0, 255, 'q', '\n', 'r'}) {
 						t.Fatal("exact capture fixture changed")
 					}
-				} else {
-					packet, err := nativeMetadataCodec(t).Decode(payload)
-					if err != nil {
-						t.Fatal("replacement metadata failed")
-					}
-					view, err := record.SpanAt(packet, 0, 0, 0)
-					if err != nil {
-						t.Fatal(err)
-					}
-					trace, span, err := view.IDs()
-					if err != nil || trace != id.Trace || span != id.Span || view.Metadata.Name != "batch-worker" || view.Metadata.GetStatus().GetCode() != tracepb.Status_STATUS_CODE_ERROR {
-						t.Fatal("registered failed-span evidence changed")
-					}
 				}
+
 				original, err = c.Lookup(ctx, id, "reader")
 				if err != nil {
 					t.Fatal("replacement lookup failed")
 				}
 			}
-			retry, err := store.Write(ctx, id, bodies[i])
+			var retry ingest.Receipt
+			if i == 0 {
+				retry, err = spans.WriteSpan(ctx, config.Registration.Execution, recoveryEnded(t, config.Registration))
+			} else {
+				retry, err = store.Write(ctx, id, bodies[i])
+			}
 			if err != nil || retry.Duplicate != accepted {
 				t.Fatal("replacement retry returned the wrong acceptance outcome")
 			}
@@ -242,22 +278,29 @@ func TestRecoveryWorker(t *testing.T) {
 				t.Fatal("replacement receipt lookup failed")
 			}
 		}
-		changed := append(bytes.Clone(bodies[0]), 0)
-		if _, err := store.Write(ctx, ids[0], changed); !errors.Is(err, ingest.ErrConflict) {
-			t.Fatal("conflicting opaque bytes overwrote original span")
+		changed := recoveryEnded(t, config.Registration)
+		changedView, _ := changed.View()
+		changedView.Metadata.Name = "different"
+		if _, err := spans.WriteSpan(ctx, config.Registration.Execution, changed); !errors.Is(err, ingest.ErrConflict) {
+			t.Fatal("conflicting typed metadata overwrote original")
 		}
-		if got, err := store.Read(ctx, ids[0]); err != nil || !bytes.Equal(got, bodies[0]) {
-			t.Fatal("conflict changed accepted span")
+		if got, err := spans.ReadSpan(ctx, config.Registration.Execution); err != nil || got.Metadata.Name != "batch-worker" {
+			t.Fatal("conflict changed accepted typed span")
 		}
+
 		recoverySend(t, out, recoveryEvent{Phase: "recovered", Receipts: receipts})
 	case "denied":
-		for i, id := range ids {
-			if got, err := store.Read(ctx, id); got != nil || !errors.Is(err, ingest.ErrDenied) {
-				t.Fatal("revoked project reader accessed saved record")
-			}
-			if _, err := store.Write(ctx, id, bodies[i]); !errors.Is(err, ingest.ErrDenied) {
-				t.Fatal("revoked writer retried accepted record")
-			}
+		if got, err := spans.ReadSpan(ctx, config.Registration.Execution); got != (record.Span{}) || !errors.Is(err, ingest.ErrDenied) {
+			t.Fatal("revoked project reader accessed saved span")
+		}
+		if _, err := spans.WriteSpan(ctx, config.Registration.Execution, recoveryEnded(t, config.Registration)); !errors.Is(err, ingest.ErrDenied) {
+			t.Fatal("revoked typed writer retried saved span")
+		}
+		if got, err := store.Read(ctx, ids[1]); got != nil || !errors.Is(err, ingest.ErrDenied) {
+			t.Fatal("revoked reader accessed capture")
+		}
+		if _, err := store.Write(ctx, ids[1], bodies[1]); !errors.Is(err, ingest.ErrDenied) {
+			t.Fatal("revoked writer retried capture")
 		}
 		recoverySend(t, out, recoveryEvent{Phase: "denied"})
 	default:

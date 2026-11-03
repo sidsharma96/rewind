@@ -15,26 +15,27 @@ var _ ingest.Catalog = (*Catalog)(nil)
 // reserves nothing and creates neither a binding nor a record. Observed expiry
 // and elapsed run closure must be saved before confirming their refusal.
 func (c *Catalog) CheckWrite(ctx context.Context, id ingest.Identity, writer ingest.Attribution) error {
-	_, err := c.write(ctx, id, writer, nil)
+	_, err := c.write(ctx, id, writer, checkWrite, nil)
 	return err
 }
 
 // Publish accepts an already-created immutable object reference. It performs no
 // object I/O and compares exact references, as the current opaque-byte Store does.
-// Decoded logical-content retry comparison remains a separate integration step.
+// Typed final-span retries use the separate SpanCatalog operations.
 // Current authority is checked before every outcome. Success follows commit;
 // unexpected errors, including lost commit replies, never confirm refusal.
 func (c *Catalog) Publish(ctx context.Context, ref ingest.Reference, writer ingest.Attribution) (ingest.Receipt, error) {
 	if ref.Size < 0 {
 		return ingest.Receipt{}, ingest.ErrInvalid
 	}
-	return c.write(ctx, ref.Identity, writer, &ref)
+	return c.write(ctx, ref.Identity, writer, publishRecord, &ref)
 }
 
-// A nil proposal is the nonreserving pre-upload check; a nonnil proposal is final
-// publication. One admission slot/deadline covers the ordinary transaction and
-// any separate run-closure transaction. No lock is upgraded in place.
-func (c *Catalog) write(ctx context.Context, id ingest.Identity, writer ingest.Attribution, proposal *ingest.Reference) (ingest.Receipt, error) {
+// The operation distinguishes checking, publishing and resolving a prior
+// comparison. A nil proposal never creates a record. One admission slot/deadline
+// covers the ordinary transaction and any separate run-closure transaction.
+// No lock is upgraded in place.
+func (c *Catalog) write(ctx context.Context, id ingest.Identity, writer ingest.Attribution, operation writeOperation, proposal *ingest.Reference) (ingest.Receipt, error) {
 	if _, err := recordKind(id); err != nil || !validID(writer.Owner.Run) || !validID(writer.Owner.Instance) || !validID(writer.SubmittedBy) {
 		return ingest.Receipt{}, ingest.ErrInvalid
 	}
@@ -54,7 +55,7 @@ func (c *Catalog) write(ctx context.Context, id ingest.Identity, writer ingest.A
 		return ingest.Receipt{}, backend("begin record write", errors.Join(err, ctx.Err()))
 	}
 	defer rollback(tx)
-	receipt, closeRun, err := c.writeLocked(ctx, tx, id, writer, proposal)
+	receipt, closeRun, err := c.writeLocked(ctx, tx, id, writer, operation, proposal)
 	if err != nil && !errors.Is(err, ingest.ErrExpired) {
 		if cleanup := rollback(tx); cleanup != nil {
 			return ingest.Receipt{}, backend("rollback record write", errors.Join(cleanup, ctx.Err()))
@@ -74,7 +75,7 @@ func (c *Catalog) write(ctx context.Context, id ingest.Identity, writer ingest.A
 	return receipt, err
 }
 
-func (c *Catalog) writeLocked(ctx context.Context, tx pgx.Tx, id ingest.Identity, writer ingest.Attribution, proposal *ingest.Reference) (ingest.Receipt, *runInfo, error) {
+func (c *Catalog) writeLocked(ctx context.Context, tx pgx.Tx, id ingest.Identity, writer ingest.Attribution, operation writeOperation, proposal *ingest.Reference) (ingest.Receipt, *runInfo, error) {
 	run, now, err := c.lockWriter(ctx, tx, id, writer)
 	if err != nil {
 		return ingest.Receipt{}, nil, err
@@ -92,6 +93,9 @@ func (c *Catalog) writeLocked(ctx context.Context, tx pgx.Tx, id ingest.Identity
 	args := []any{[]byte(id.Tenant), id.Trace[:], id.Span[:], kind}
 	original, lifetime, err := c.record(ctx, tx, id, args)
 	if errors.Is(err, ingest.ErrNotFound) {
+		if operation == resolveEqualSpan || operation == resolveDifferentSpan {
+			return ingest.Receipt{}, nil, ingest.ErrIntegrity
+		}
 		if proposal == nil {
 			return ingest.Receipt{}, nil, nil
 		}
@@ -120,10 +124,20 @@ func (c *Catalog) writeLocked(ctx context.Context, tx pgx.Tx, id ingest.Identity
 		}
 		return ingest.Receipt{}, nil, ingest.ErrExpired
 	}
+	if operation == inspectSpan {
+		return original, nil, nil
+	}
 	if proposal == nil {
 		return ingest.Receipt{}, nil, nil
 	}
-	if original.Reference != *proposal {
+	if operation == resolveEqualSpan || operation == resolveDifferentSpan {
+		if original.Reference != *proposal {
+			return ingest.Receipt{}, nil, ingest.ErrIntegrity
+		}
+		if operation == resolveDifferentSpan {
+			return ingest.Receipt{}, nil, ingest.ErrConflict
+		}
+	} else if original.Reference != *proposal && operation != publishSpan {
 		return ingest.Receipt{}, nil, ingest.ErrConflict
 	}
 	original.Duplicate = true

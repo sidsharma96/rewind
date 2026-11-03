@@ -162,7 +162,7 @@ func New(authorizer Authorizer, objects Objects, catalog Catalog, limits Limits)
 
 // Write accepts one immutable record. The caller must not mutate
 // contents until return. Equality is exact opaque bytes for this experiment;
-// the typed schema/encoding needed for production equality remains undesigned.
+// typed final spans use the separate Spans coordinator and logical comparison.
 // Either kind may arrive first; no capture-body validation is performed.
 // Do not expose this primitive
 // directly as an attachment API. An error is never proof that a record with this
@@ -225,7 +225,11 @@ func (s *Store) Read(ctx context.Context, id Identity) ([]byte, error) {
 		return nil, err
 	}
 	defer s.end()
+	return s.read(ctx, id)
+}
 
+// read requires the caller to hold this Store's admission slot through decoding.
+func (s *Store) read(ctx context.Context, id Identity) ([]byte, error) {
 	reader, err := s.authorizer.AuthorizeRead(ctx, id.Tenant)
 	if err != nil {
 		return nil, fmt.Errorf("authorize project reader: %w", err)

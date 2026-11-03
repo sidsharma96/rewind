@@ -1,7 +1,7 @@
 // Package record associates generated spans with inline context and provides
 // bounded metadata encoding, owned ordering, read-only comparison and saved-object
-// envelope framing. It does not authenticate, validate complete records, or define
-// the kind-specific payload schemas of a complete saved format.
+// envelope framing. SpanCodec defines the internal final-span payload and checked
+// preparation/decoding; capture schemas and authentication remain separate.
 package record
 
 import (

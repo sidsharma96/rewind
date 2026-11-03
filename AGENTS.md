@@ -29,7 +29,8 @@ planned behavior distinct from implemented behavior. The CLI is still only a
 command-line entry point. An internal ingest coordinator is exercised with controlled
 test backends; native PostgreSQL registration/publication/lookup now composes with the R2
 object adapter in disposable-database/controlled-HTTP tests. A public capture format,
-typed acceptance, real credential verification and replay remain unimplemented.
+real credential verification and replay remain unimplemented. Internal typed
+ended-span save/read and semantic retries now compose with those adapters.
 The private `rewind-dev` bucket exists; its scoped live probe passes
 creation/retry, conditional overwrite rejection, locally discarded PUT replies and
 fresh-client reads. A separate-process drill kills/reaps the writer and removes
@@ -173,7 +174,8 @@ before returning equal or different. Errors are neither equality nor conflicts.
 Keep every reachable input stable for the whole call; never normalize borrowed
 messages during comparison. Bind special Status handling to its named descriptor
 and keep schema coverage and oracle fuzzing. The lab delegates to `record.MetadataCodec` and retains the copying oracle.
-Runtime retry integration and the full saved-version/body contract remain separate. See
+Runtime final-span retry integration now uses this comparison; capture body and
+future saved-version contracts remain separate. See
 `engineering/CAPTURE.md#direct-metadata-comparison`.
 
 Preserve every structurally supported received link, including an empty message,
@@ -193,12 +195,13 @@ expected kind. Refuse unsupported versions/kinds and mismatches; never decode a
 future kind as a final span. The label grants no authority and cannot reconstruct
 acceptance. `record.EnvelopeCodec` now implements the seven-byte `RWND` prefix,
 version 1, span/capture tags 1/2 and plain/gzip tags 0/1. The version covers the
-whole format revision; kind-specific schemas remain open, and synthetic fixture
-payloads do not freeze them. Map catalog kinds explicitly rather than casting
+whole format revision; SpanCodec now defines its internal final-span payload.
+Capture schemas remain open, and synthetic capture fixtures do not freeze them.
+Map catalog kinds explicitly rather than casting
 `ingest.Kind`. Decode requires caller-verified size/digest and an authorized
 expected kind, checks labels before decompression, and returns owned payloads or
-nil on error. Typed admission, complete payload codecs and production limits remain open;
-see `engineering/CAPTURE.md#saved-object-kind-discrimination`.
+nil on error. Typed final-span admission is internal; public interfaces, capture
+codecs and production limits remain open; see `engineering/CAPTURE.md#saved-object-kind-discrimination`.
 Envelope record kind is separate from descriptive OTLP span kind, whose unknown
 numeric values must still be preserved under the policy above.
 The first envelope omits an exact expanded-payload length. Enforce separate stored
@@ -210,8 +213,12 @@ input and combined expanded output. Refuse invalid/truncated later members and
 non-member trailing bytes before payload parsing. Our writer emits one member.
 Revisit for a required consumer or measured workload that needs a narrower rule.
 The envelope codec implements these byte boundaries with explicit limits and the
-agreed configurable compression policy; kind-specific payload decoding, typed
-admission and production byte limits remain open.
+agreed configurable compression policy; final-span payload decoding and typed
+admission now use `record.SpanCodec` and
+`ingest.Spans`. Capture-body schemas, public admission and production byte limits
+remain open. Blank span names are preserved as unknown evidence, with display
+fallback separate from saved metadata. Revisit for a required consumer that cannot
+safely expose an unknown name, using its concrete failure before changing acceptance.
 
 
 ## Independent review

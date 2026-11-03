@@ -300,8 +300,10 @@ digest on each retained row. Bound active work, including the comparison, rather
 than launching an unbounded goroutine per retry. Revisit using measured comparison
 rates, encoder versions, bytes, latency and failures, especially during upgrades.
 
-The current opaque-byte coordinator still requires an identical returned reference.
-Direct metadata equality is implemented in `record.MetadataCodec`; the selected
-runtime retry fallback is not. Full schema, remaining normalization,
-version compatibility, concrete capability/API changes and fault tests must precede
-integration; this decision does not freeze them or add a production codec.
+The opaque-byte coordinator still requires an identical returned reference.
+`ingest.Spans` now integrates direct metadata equality for version-1 final spans.
+It uses writer-scoped catalog inspection, exact accepted-object reads outside locks,
+and final authority/run/expiry/reference resolution. The native composition and
+writer-process drill exercise this path; controlled principals and surviving local
+services do not establish deployed authentication or machine-loss recovery. Capture
+body schemas and future-version compatibility remain separate.
