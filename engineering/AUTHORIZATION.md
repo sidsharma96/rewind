@@ -1,11 +1,15 @@
 # Ownership at record acceptance
 
-Status: implemented as internal coordination with controlled test capabilities. It exercises
-already selected producer ownership and explicit project-reader rules. Native
+Status: internal credential verification and catalog authorization are implemented.
+They enforce selected producer ownership and explicit project-reader rules. Native
 PostgreSQL CheckWrite/Publish now repeat current writer, binding and run checks;
 Lookup checks an exact project-reader grant and saved ownership. The composed
-coordinator test publishes real SQL rows against a controlled object peer. No credential format, grant lifecycle or endpoint
-is selected here.
+coordinator test publishes real SQL rows against a controlled object peer. The
+authentication adapter verifies separate opaque bearer credentials for individual
+principals, with permissions kept authoritative in PostgreSQL. A trusted host
+helper registers actual OpenTelemetry SDK span IDs. Operator grant/credential
+setup is explicit; a public receiver, credential distribution/rotation service and
+authenticated run controller remain unimplemented.
 
 Alice owns call 42. A trusted host registers its tenant/trace/span to Alice's
 run/instance before either record arrives. Bob has writing permission for his own
@@ -30,6 +34,66 @@ trusted request -> authorize project reader -> authorized catalog lookup
 ```
 
 ## Internal capabilities
+
+`access.Credentials` maps each verified bearer credential to one submitting
+principal. Its direct HTTP adapter requires TLS and exactly one Authorization
+header; forwarded protocol/owner/principal headers supply no identity. TLS client
+certificate validation belongs to the caller's client configuration. Alice, Bob,
+a collector and a project reader remain distinguishable. A credential does not establish execution
+ownership, grant project reading or replace the catalog's current permission checks.
+Credential rotation must preserve the principal and existing execution identities.
+
+We choose this direction to integrate the first trusted application without adding
+an identity provider. OpenTelemetry Collector's
+[bearer verifier](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/f412fad84ccd3cd7ffe1bcb5bc2608940984effa/extension/bearertokenauthextension/bearertokenauth.go#L234-L254)
+checks a configured credential but returns the original context, so copying that
+mechanism alone would not supply Rewind's separate principals. Its
+[OIDC verifier](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/f412fad84ccd3cd7ffe1bcb5bc2608940984effa/extension/oidcauthextension/extension.go#L216-L247)
+verifies the credential before extracting identity; neither mechanism establishes
+Rewind ownership. Revisit an existing OIDC integration when a real application
+needs its managed issuance, rotation or identity system. Opaque credential
+distribution and rotation remain our responsibility; no instantaneous global
+credential-revocation guarantee is selected.
+
+Tokens contain 32 random bytes encoded as 64 lowercase hexadecimal characters.
+Server snapshots retain SHA-256 digests of that text, principal names and exclusive
+expiry instants, not raw tokens. The configured credential count and lifetimes
+have no production defaults. Authentication scans every configured digest with
+constant-time comparison/selection; malformed-token parsing and expiry checks do
+not have that timing promise. Verification costs O(C) for C configured credentials;
+snapshot space is O(C). Each later protected operation rechecks the private
+context's expiry and cancellation. Snapshot replacement does not invalidate old
+contexts; an already-authorized operation may finish after expiry, and wall-clock
+rollback can extend apparent validity. Current catalog grant removal remains
+ordered at authoritative operation boundaries.
+
+`access.Authorizer` queries the native catalog for current permissions. WriterFor
+derives the owner from the immutable registered binding and checks the verified
+principal's writer grant. CheckReader requires its independent project grant;
+CheckCreator permits an exact-call grant or separately granted trusted-host scope.
+Each preliminary check adds one bounded catalog transaction, no object request,
+and reserves no acceptance. Store and Registrar still repeat current policy at
+their final operation boundaries. The adapter creates no policy cache or worker.
+
+`producer.Host` copies a configured project/run/instance and registers the actual
+SpanContext returned by the standard SDK. It changes no IDs and exports no span.
+Host creation permission is explicit in `host_creator_grants`, scoped to one
+project/run/instance/principal, separately from exact-call `creator_grants` and
+writer/reader grants. A trusted operator installs/removes these grants under the
+exclusive project gate. Registration checks either current creator grant under
+the shared gate before its existing binding and run-admission decision. No
+per-call policy row is synthesized; no agent-facing grant-management API is added.
+Only trusted host code may hold this credential. It does not isolate malicious
+code sharing that credential-bearing process or attest truthful execution.
+
+Compared with operator approval for each freshly generated call ID, host scope
+allows normal applications to start calls without an administrator round trip.
+It gives the trusted host broader creation authority within that one instance;
+ordinary writer and collector credentials gain none. Revisit if the actual host
+cannot protect that credential or requires narrower creation authority. Retry an
+uncertain registration with the same SDK IDs and owner; starting another span
+would create a different execution. Removing creator scope does not implicitly
+remove delivery or reading authority, which retain independent grants.
 
 Store replaces the tenant-only authorizer and catalog contracts, rather than retaining
 an optional unprotected mode. Write's caller still supplies only identity and bytes.
@@ -233,6 +297,13 @@ duplicate and conflicting requests. Concurrent collectors retain one original
 submitter. Tests refuse legacy rows with missing attribution rather than inferring
 their history from a later registration.
 
-These experiments model trusted capabilities in one process. Real authentication,
-Native publication tests additionally exercise PostgreSQL transactions; live R2
-durability and trace enumeration remain outside these controlled checks.
+Those model experiments supply trusted capabilities in one process. Native
+publication tests additionally exercise PostgreSQL transactions. The authenticated
+integration now generates real SDK IDs, verifies distinct opaque credentials,
+registers owner bindings without exact-call grants, saves both agents' span/capture
+fixtures and recovers the shared trace and saved response through fresh verifier,
+catalog and coordinator objects. It checks cross-owner denial, scoped collector
+retry attribution and grant removal before object access. Separate HTTP tests use
+a certificate-verifying TLS client. The native objects remain a controlled HTTP
+peer; these tests do not supply a public receiver, automatic SDK exporter, remote
+catalog deployment or actual ingest-host destruction.

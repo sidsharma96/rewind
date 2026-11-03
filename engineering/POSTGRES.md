@@ -2,7 +2,8 @@
 
 Status: ownership registration and record Lookup have an internal native-pgx
 PostgreSQL adapter, including CheckWrite/Publish. There is no public
-endpoint or real credential verification. R2 objects have a separate adapter,
+endpoint. Internal opaque credential verification now composes with native
+preliminary permission checks and authoritative operations. R2 objects have a separate adapter,
 with a private development bucket and a passing scoped write/retry/read probe. The first
 native integration tests use disposable PostgreSQL, not a remotely deployed
 production catalog.
@@ -99,7 +100,8 @@ The adapter implements the complete internal ingest.Catalog capability alongside
 ownership registration. Lookup still cannot register owners or create accepted
 records. Native publication uses current writer grants and the same registered
 bindings; composed tests save through Store rather than seed accepted rows.
-Real credential verification and remote catalog deployment remain absent.
+An internal credential adapter now derives principals and checks current native
+permissions; public reception and remote catalog deployment remain absent.
 Persist kinds as explicit span/capture labels, digests as 32 bytes, size as a checked
 nonnegative bigint, bounded opaque owner/submitter IDs as bytea, and original catalog
 acceptance/expiry/marker instants as finite timestamptz values with increasing
@@ -113,7 +115,8 @@ Publication chooses these times once from trusted policy under its locks.
 `SELECT ... FOR UPDATE` does not lock a nonexistent binding. Registration needs
 the binding's unique project/trace/span constraint as well as row locking:
 
-1. Acquire the shared project gate and check the current exact creator permission.
+1. Acquire the shared project gate and check current exact-call creator permission
+   or separately granted host creation scope for that project/run/instance/principal.
 2. Tentatively insert the proposed complete binding with `ON CONFLICT DO NOTHING`.
    This never updates an existing owner or original registrar. If another
    registration is still deciding the same identity, the unique insertion waits.
@@ -178,13 +181,13 @@ duration is an automatic cleanup mechanism. This does not establish remote durab
 The concrete `internal/catalog` package uses native pgxpool and implements
 `ingest.OwnershipCatalog` and all three protected ingest.Catalog operations. Store
 can use the same native catalog for preliminary checks, publication and reads. There is no public
-endpoint or real credential verification.
+endpoint. Credential verification now lives in the separate internal access adapter.
 
 The caller owns the pool and supplies a trusted schema name; query table names
 are explicitly qualified. An explicit installer creates that new owned schema
 and its tables in one transaction; no implicit
 creation, destructive migration or reuse of unrelated application tables. The
-first operation needs project gates, runs, exact creator grants and immutable
+first operation needs project gates, runs, exact and scoped host creator grants and immutable
 bindings only. Persist IDs as bytea, preserving exact bytes and avoiding text
 collation or UTF-8 normalization. Trace IDs are exactly 16 bytes and span IDs
 exactly 8 bytes, with at least one nonzero byte in each ID.

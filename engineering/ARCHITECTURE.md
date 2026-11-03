@@ -9,7 +9,9 @@ span records, including equivalent differently encoded retries. An internal boun
 trace reader now discovers final spans from project and trace ID alone. Internal
 typed captures save exact request/response bytes with explicit availability, and
 authorized recorded-byte playback returns complete saved responses. A public
-capture format, credential verification and application replay runtime remain unimplemented.
+capture format and application replay runtime remain unimplemented. Internal opaque
+bearer verification, native permission checks and a trusted SDK-ID registration
+helper now compose with the typed record path; there is no public receiver.
 Its separate-process drill also kills/reaps a writer and removes its working
 directory before recovering accepted records through new clients. Controlled
 HTTP PUT-response loss and actual local PostgreSQL COMMIT-response loss are
@@ -17,7 +19,11 @@ exercised. The storage services survive; this does not establish remote durabili
 or ingest-machine replacement.
 An internal ownership-registration coordinator shares its binding contract with
 owner-aware publication and explicit project-reader lookups. Controlled capabilities
-exercise this integration; real credential verification remains absent.
+exercise earlier integration tests. `access.Credentials` and `access.Authorizer`
+now verify distinct principals and current native grants; `producer.Host` registers
+actual SDK IDs under separately granted host creation scope. Trusted setup still
+installs grants and credential snapshots; distribution, rotation and authenticated
+run controls remain unimplemented.
 
 ## Long-term outcome
 
@@ -81,7 +87,9 @@ removed. The capture drill adds Alice's handoff and Bob's separate failed/succes
 tool attempts, shuts down both writers and the controlled tool, then discovers and
 plays back the available response from project/trace alone. Actual capture COMMIT
 reply loss returns uncertainty before the new process finds its original acceptance.
-These leave real authentication and actual host/catalog recovery open; they do not deliver
+These process drills leave actual host/catalog recovery open. Separate internal
+authentication tests now verify opaque credentials and current native permissions;
+the drills do not deliver
 the complete acceptance scenario above.
 
 ### Current capture and saved-result operation
@@ -389,7 +397,7 @@ This cannot correct an unobserved clock jump and can retain an early closure cau
 by a false forward jump. The registration adapter now persists bindings and elapsed closure in PostgreSQL.
 Authenticated run-control operations and general provider
 clock/failover guarantees remain unimplemented.
-Cleanup, real authentication/grant lifecycles and combined query semantics remain
+Cleanup, credential distribution/rotation, grant lifecycles and combined query semantics remain
 to be designed. Lookup can save expiry; no autonomous expiry worker or storage quota
 mechanism exists yet.
 OTLP reception still needs its own bounded decoding, batch handling and

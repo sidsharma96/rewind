@@ -32,6 +32,14 @@ CREATE TABLE creator_grants (
     PRIMARY KEY (project, trace_id, span_id, run_id, instance_id, principal_id),
     FOREIGN KEY (project, run_id) REFERENCES runs(project, run_id)
 );
+CREATE TABLE host_creator_grants (
+    project bytea NOT NULL,
+    run_id bytea NOT NULL,
+    instance_id bytea NOT NULL CHECK (octet_length(instance_id) BETWEEN 1 AND 256),
+    principal_id bytea NOT NULL CHECK (octet_length(principal_id) BETWEEN 1 AND 256),
+    PRIMARY KEY (project, run_id, instance_id, principal_id),
+    FOREIGN KEY (project, run_id) REFERENCES runs(project, run_id)
+);
 CREATE TABLE bindings (
     project bytea NOT NULL,
     trace_id bytea NOT NULL CHECK (octet_length(trace_id) = 16 AND trace_id <> decode(repeat('00', 16), 'hex')),

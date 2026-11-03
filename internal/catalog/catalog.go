@@ -272,15 +272,10 @@ func (c *Catalog) register(ctx context.Context, tx pgx.Tx, r ingest.Registration
 	if err := c.gate(ctx, tx, r.Execution.Tenant, "SHARE"); err != nil {
 		return fail(err)
 	}
+	if err := c.checkCreator(ctx, tx, r); err != nil {
+		return fail(err)
+	}
 	args := []any{[]byte(r.Execution.Tenant), r.Execution.Trace[:], r.Execution.Span[:], []byte(r.Owner.Run), []byte(r.Owner.Instance), []byte(r.RegisteredBy)}
-	var allowed bool
-	err := tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM "+c.table("creator_grants")+" WHERE project=$1 AND trace_id=$2 AND span_id=$3 AND run_id=$4 AND instance_id=$5 AND principal_id=$6)", args...).Scan(&allowed)
-	if err != nil {
-		return fail(backend("check creator", err))
-	}
-	if !allowed {
-		return fail(ingest.ErrDenied)
-	}
 	tag, err := tx.Exec(ctx, "INSERT INTO "+c.table("bindings")+"(project,trace_id,span_id,run_id,instance_id,registered_by) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING", args...)
 	if err != nil {
 		return fail(backend("insert binding", err))
@@ -328,6 +323,26 @@ func (c *Catalog) register(ctx context.Context, tx pgx.Tx, r ingest.Registration
 		return fail(ingest.ErrOwnershipConflict)
 	}
 	return original, identical, nil, nil
+}
+
+// checkCreator requires the project gate to be held before reading current
+// grants. Trusted hosts may create fresh execution bindings only for their
+// explicitly granted instance; ordinary writer grants never confer this power.
+func (c *Catalog) checkCreator(ctx context.Context, tx pgx.Tx, r ingest.Registration) error {
+	query := "SELECT EXISTS(SELECT 1 FROM " + c.table("creator_grants") + `
+        WHERE project=$1 AND trace_id=$2 AND span_id=$3 AND run_id=$4 AND instance_id=$5 AND principal_id=$6)
+        OR EXISTS(SELECT 1 FROM ` + c.table("host_creator_grants") + `
+        WHERE project=$1 AND run_id=$4 AND instance_id=$5 AND principal_id=$6)`
+	var allowed bool
+	err := tx.QueryRow(ctx, query, []byte(r.Execution.Tenant), r.Execution.Trace[:], r.Execution.Span[:],
+		[]byte(r.Owner.Run), []byte(r.Owner.Instance), []byte(r.RegisteredBy)).Scan(&allowed)
+	if err != nil {
+		return backend("check creator", err)
+	}
+	if !allowed {
+		return ingest.ErrDenied
+	}
+	return nil
 }
 
 func (c *Catalog) closeElapsed(ctx context.Context, project string, observed []runInfo) error {
