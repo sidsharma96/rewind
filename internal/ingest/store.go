@@ -230,28 +230,45 @@ func (s *Store) Read(ctx context.Context, id Identity) ([]byte, error) {
 
 // read requires the caller to hold this Store's admission slot through decoding.
 func (s *Store) read(ctx context.Context, id Identity) ([]byte, error) {
+	receipt, err := s.lookup(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return s.readObject(ctx, receipt.Reference)
+}
+
+// lookup requires an admission slot and checks current reader authority and the
+// complete original receipt. It performs no object I/O. Trace pages use the exact
+// returned receipt for both attribution and object verification.
+func (s *Store) lookup(ctx context.Context, id Identity) (Receipt, error) {
 	reader, err := s.authorizer.AuthorizeRead(ctx, id.Tenant)
 	if err != nil {
-		return nil, fmt.Errorf("authorize project reader: %w", err)
+		return Receipt{}, fmt.Errorf("authorize project reader: %w", err)
 	}
 	if !validRegistrationID(reader) {
-		return nil, ErrInvalid
+		return Receipt{}, ErrInvalid
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return Receipt{}, err
 	}
 	receipt, err := s.catalog.Lookup(ctx, id, reader)
 	if err != nil {
-		return nil, fmt.Errorf("lookup record: %w", err)
+		return Receipt{}, fmt.Errorf("lookup record: %w", err)
 	}
 	ref := receipt.Reference
 	if !validReceiptTimes(receipt) || ref.Identity != id || ref.Size < 0 || !validAttribution(receipt.Attribution) || receipt.Duplicate {
-		return nil, ErrIntegrity
+		return Receipt{}, ErrIntegrity
 	}
 	if ref.Size > s.limits.MaxRecordBytes {
-		return nil, ErrTooLarge
+		return Receipt{}, ErrTooLarge
 	}
-	contents, err := s.objects.ReadExact(ctx, ObjectID{Tenant: id.Tenant, Digest: ref.Digest}, ref.Size)
+	return receipt, nil
+}
+
+// readObject requires a checked authorized reference and an admission slot. It
+// preserves the defensive exact-size/digest check even for a substitutable peer.
+func (s *Store) readObject(ctx context.Context, ref Reference) ([]byte, error) {
+	contents, err := s.objects.ReadExact(ctx, ObjectID{Tenant: ref.Identity.Tenant, Digest: ref.Digest}, ref.Size)
 	if err != nil {
 		return nil, fmt.Errorf("read accepted record object: %w", err)
 	}
@@ -268,6 +285,11 @@ func (s *Store) begin(ctx context.Context, id Identity) error {
 	if id.Tenant == "" || len(id.Tenant) > maxIdentityBytes || !id.Trace.Valid() || !id.Span.Valid() {
 		return ErrInvalid
 	}
+	return s.admit(ctx)
+}
+
+// admit takes one nonwaiting slot after the caller validates its operation key.
+func (s *Store) admit(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}

@@ -31,6 +31,12 @@ test backends; native PostgreSQL registration/publication/lookup now composes wi
 object adapter in disposable-database/controlled-HTTP tests. A public capture format,
 real credential verification and replay remain unimplemented. Internal typed
 ended-span save/read and semantic retries now compose with those adapters.
+Internal trace-ID reads use bounded current pages through the same coordinator
+gate. Continuation is a scoped key position, not a membership snapshot or reader
+permission; refresh from the beginning discovers late arrivals behind it. A
+trace-ID-only replacement-process test recovers Alice and Bob's independently
+owned final spans after both writers are killed/reaped and their working directories
+removed. Capture bodies, real credentials and actual host/catalog recovery remain open.
 The private `rewind-dev` bucket exists; its scoped live probe passes
 creation/retry, conditional overwrite rejection, locally discarded PUT replies and
 fresh-client reads. A separate-process drill kills/reaps the writer and removes

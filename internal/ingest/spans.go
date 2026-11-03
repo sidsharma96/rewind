@@ -190,6 +190,12 @@ func (s *Spans) ReadSpan(ctx context.Context, execution Execution) (record.Span,
 	if err != nil {
 		return record.Span{}, err
 	}
+	return s.decodeSpan(ctx, execution, stored)
+}
+
+// decodeSpan is shared by known-record and trace-page reads. Its caller holds
+// the Store slot and has verified these bytes against this authorized execution.
+func (s *Spans) decodeSpan(ctx context.Context, execution Execution, stored []byte) (record.Span, error) {
 	if err := ctx.Err(); err != nil {
 		return record.Span{}, err
 	}
