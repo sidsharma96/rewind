@@ -21,7 +21,7 @@ func (c *Catalog) CheckWrite(ctx context.Context, id ingest.Identity, writer ing
 
 // Publish accepts an already-created immutable object reference. It performs no
 // object I/O and compares exact references, as the current opaque-byte Store does.
-// Typed final-span retries use the separate SpanCatalog operations.
+// Typed spans/captures use their separate kind-checked publisher operations.
 // Current authority is checked before every outcome. Success follows commit;
 // unexpected errors, including lost commit replies, never confirm refusal.
 func (c *Catalog) Publish(ctx context.Context, ref ingest.Reference, writer ingest.Attribution) (ingest.Receipt, error) {
@@ -93,7 +93,7 @@ func (c *Catalog) writeLocked(ctx context.Context, tx pgx.Tx, id ingest.Identity
 	args := []any{[]byte(id.Tenant), id.Trace[:], id.Span[:], kind}
 	original, lifetime, err := c.record(ctx, tx, id, args)
 	if errors.Is(err, ingest.ErrNotFound) {
-		if operation == resolveEqualSpan || operation == resolveDifferentSpan {
+		if operation == resolveEqualTyped || operation == resolveDifferentTyped {
 			return ingest.Receipt{}, nil, ingest.ErrIntegrity
 		}
 		if proposal == nil {
@@ -124,20 +124,20 @@ func (c *Catalog) writeLocked(ctx context.Context, tx pgx.Tx, id ingest.Identity
 		}
 		return ingest.Receipt{}, nil, ingest.ErrExpired
 	}
-	if operation == inspectSpan {
+	if operation == inspectTyped {
 		return original, nil, nil
 	}
 	if proposal == nil {
 		return ingest.Receipt{}, nil, nil
 	}
-	if operation == resolveEqualSpan || operation == resolveDifferentSpan {
+	if operation == resolveEqualTyped || operation == resolveDifferentTyped {
 		if original.Reference != *proposal {
 			return ingest.Receipt{}, nil, ingest.ErrIntegrity
 		}
-		if operation == resolveDifferentSpan {
+		if operation == resolveDifferentTyped {
 			return ingest.Receipt{}, nil, ingest.ErrConflict
 		}
-	} else if original.Reference != *proposal && operation != publishSpan {
+	} else if original.Reference != *proposal && operation != publishTyped {
 		return ingest.Receipt{}, nil, ingest.ErrConflict
 	}
 	original.Duplicate = true

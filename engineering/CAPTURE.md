@@ -3,22 +3,25 @@
 Status: the user selected a small explicit Rewind capture path first, with an
 OpenTelemetry-compatible internal record and a later OTLP adapter. No public capture
 schema or receiver is implemented. Internal typed ended-span admission and its
-version-1 saved payload are implemented; capture body schemas remain open. The selected
+version-1 saved payload are implemented. Internal typed captures and saved-byte
+playback are also implemented; public receiver schemas remain open. The selected
 span-metadata model reuses OpenTelemetry's generated Go types, including resource,
 scope and typed attributes. Rewind owns validation, normalization, exact capture
 bodies, ownership and the saved format. The narrow JSON adapter below is selected;
-the capture record schema remains open. The selected saved layout is versioned framing followed by JSON metadata and exact raw request
+the internal capture schema is specified below. The selected saved layout is versioned framing followed by JSON metadata and exact raw request
 and response bytes. Compression uses a size gate, then keeps gzip only if smaller;
 the selected starting threshold is configurable with a 32 KiB default for the
 complete hybrid record before compression or an outer encoding marker. The selected
 gzip starting setting is configurable BestSpeed. The internal envelope framing is now implemented by `record.EnvelopeCodec` below;
 `record.SpanCodec` implements its final-span payload and `ingest.Spans` the
-internal typed save/read/retry path. Capture-body states/schemas and production byte
-limits remain open. The older `ingest.Store` still receives opaque bytes.
+internal typed span save/read/retry path. `record.CaptureCodec` and
+`ingest.Captures` implement the internal capture schema and saved-response operation.
+Public capture admission and production byte limits remain open. The older `ingest.Store` still receives opaque bytes.
 An isolated [encoding experiment](CAPTURE-ENCODING.md) compares full JSON with
 JSON metadata and raw bodies, including compression. The user selected the hybrid
-layout from its results. Its body experiments remain test-only; the runtime span
-codec now uses the existing metadata JSON adapter and envelope.
+layout from its results. Its earlier body experiments remain test-only; the runtime
+capture codec implements the bounded layout below and the span codec uses the
+existing metadata JSON adapter and envelope.
 
 ## Typed final-span acceptance
 
@@ -100,7 +103,122 @@ removes its directory and decodes through fresh process clients, including lost
 stored-PUT and actual typed PostgreSQL COMMIT responses. Surviving local services
 and controlled principals do not establish machine loss, provider durability,
 remote catalog recovery or real credential verification. Public capture-body
-admission, trace enumeration, consumers and playback remain later work.
+admission remains later work. Bounded trace enumeration and internal capture
+playback now exist, with the limits described below.
+
+## Typed capture and saved response
+
+`record.Capture` contains one execution's trace/span IDs, request Body and response
+Body. Project, owner, submitting principal and acceptance remain authoritative
+catalog facts. Bodies preserve arbitrary raw bytes; they need not be JSON or UTF-8.
+Each body has one required `BodyState`:
+
+| State | Permitted bytes | Meaning for the saved-result consumer |
+| --- | --- | --- |
+| Missing | Zero bytes | No body was supplied |
+| Redacted | Zero bytes | Producer reports deliberate withholding |
+| Truncated | Any bounded partial bytes, including zero | Incomplete evidence, with no promised prefix, offset or original length |
+| Present | Any bounded complete bytes, including zero | Complete body as reported by the producer |
+
+Zero/unknown states are invalid. States describe the producer's report; they prove
+neither truth nor authority. No automatic redaction/truncation is performed. Nil and
+empty byte slices within the same state compare alike. A Present zero-byte response
+is distinct from Missing. Accepted capture remains immutable; later complete bodies
+cannot upgrade an accepted unavailable capture under the same execution identity.
+
+The internal version-1 CaptureObject payload follows the common RWND envelope:
+three little-endian unsigned 64-bit lengths for header, request and response, then
+those sections in order. The 24-byte framing overhead is derived from three
+eight-byte fields. The JSON header has exactly four required string keys:
+`trace_id`, `span_id`, `request_state`, `response_state`. The writer emits lowercase
+hex IDs. Decode accepts equivalent ID case, header field order and whitespace, but
+refuses unknown/case-folded keys, duplicate decoded keys, missing fields, wrong
+types, invalid UTF-8, invalid/nonzero-ID widths, unsupported states, inconsistent
+states/bytes, extra JSON values and trailing/truncated frames. Earlier opaque or
+experimental RWL1 payloads are not migrated or guessed. Version 1 covers this
+internal payload as well as its envelope; incompatible changes need a version
+decision, and this is not a frozen public receiver format.
+
+`CaptureCodec` requires positive metadata/per-body caps and an explicitly configured
+EnvelopeCodec. Actual header/body totals are checked against the expanded cap by
+subtraction before body allocation; decode checks each uint64 against its component
+cap and remaining input before conversion/slicing. Stored/expanded caps are independent,
+and hypothetical component maxima need not all fit at once. No production defaults
+are chosen. Prepare returns separately owned prepared bodies and stored bytes;
+Decode returns separately owned bodies, so retaining a response does not pin the
+entire expanded record. Compare validates both records before comparing IDs, states
+and exact bytes. Header formatting/compression differences alone are equivalent.
+
+The parser uses `encoding/json.Decoder.Token` for four exact string fields, rather
+than ordinary struct decoding. Installed Go 1.27.2's `encoding/json/decode.go`
+documents case-insensitive struct-key matching and later duplicate replacement;
+both would hide ambiguous metadata here. Each accepted key/value is checked before
+continuing, and the closing object must be followed by EOF. This bounded flat
+schema adds no generic JSON tree framework.
+
+`ingest.Captures` borrows a configured Spans coordinator's private Store, sharing
+the complete-operation admission gate, authorizer, objects and catalog without
+requiring a saved span. `CaptureCatalog` exposes only trusted kind-checked
+InspectCapture, PublishCapture and ResolveCapture. Native wrappers share the
+existing typed catalog transaction modes with spans; both kinds retain their own
+guards. No table/index or object contract changes. Comparison reads occur outside
+locks; final resolution repeats current owner/grant/run/expiry/reference checks.
+New records create immutable objects before publication. Retries preserve original
+bytes, receipt, attribution and times. Changed state or raw bytes conflict; parser,
+integrity and operational errors are not comparison outcomes. Legacy opaque data
+under an accepted capture identity fails closed without rewriting its acceptance.
+
+ReadCapture returns owned decoded bodies with the exact authorized receipt used
+for verification. Missing/expired records, object loss, corruption, unsupported
+format, permission and backend failures remain errors, never fabricated body states.
+Playback uses that same authorized read within one admission slot. It returns
+`SavedResult{Execution, Receipt, Bytes, RequestState}` only for a Present response.
+A Missing/Redacted/Truncated response returns `ErrResultUnavailable` with a zero
+result. A Present zero-byte response succeeds. A Missing/Redacted/Truncated request
+does not prevent returning a complete response; mandatory RequestState prevents
+that result from implying a complete captured pair. No incoming request matching,
+live fallback, span-status-derived exception or replay of arbitrary Go errors exists.
+Inspect unavailable evidence through ReadCapture instead.
+
+The simplest stricter alternative requires both bodies Present. It makes the pair
+complete by construction but discards useful saved results solely because input
+was withheld. The selected consumer returns saved bytes by authorized execution
+identity. Revisit if a required consumer must match a new request, reconstruct a
+tool exception or guarantee a complete pair, bringing its concrete failure before
+changing this operation.
+
+Pinned primary comparisons inform the boundary, not this wire format.
+[OpenTelemetry semantic conventions v1.38.0](https://github.com/open-telemetry/semantic-conventions/blob/8e16df7981f94b70ed1b9795c995094af995184f/docs/gen-ai/gen-ai-spans.md)
+describe input/output content separately as opt-in and discuss sensitive/large
+content and external storage. That makes selective evidence a realistic workload;
+it prescribes no Rewind playback rule. [VCR.py 8.4.0's cassette](https://github.com/kevin1024/vcrpy/blob/9daef64c0497f5ce1d125fe53ec83afccba4027c/vcr/cassette.py#L246-L274)
+finds a recorded HTTP response using configured incoming-request matchers and raises
+when none matches. Its default matcher list is URI/method, not every original byte.
+That substitution workload differs from Rewind's explicit execution lookup and
+does not supply our ownership or durability guarantees. Our inference is that
+selective input retention fits saved-result inspection, while request substitution
+needs its own matching contract.
+
+Tests cover all 16 state pairs, arbitrary binary/empty bodies, ambiguous headers,
+length overflow/truncation, independent caps, ownership and fuzz round trips. Native
+tests check independent span/capture arrival, original receipts, compression retries,
+current permission/run/expiry/reference failures and kind guards. The process drill
+records Alice's handoff and Bob's separate failed/successful calls to a controlled
+tool. Both writers are killed/reaped, directories removed and tool stopped before a
+new process receives only project/trace and storage settings. It discovers all
+three spans, refuses the missing failed result and returns the successful saved
+bytes with RequestState=Redacted and original acceptance. The same sequence covers
+actual capture COMMIT reply loss. Recovery performs seven GETs and no PUT/tool
+requests in the controlled workload. Surviving local PostgreSQL/HTTP services do
+not establish physical host loss, remote catalog placement or provider durability.
+
+Preparation/decoding/comparison are linear in bounded header plus raw bytes, with
+owned copies and gzip buffers, not an exact heap or hard CPU bound. A cold capture
+read needs one authorized lookup and one GET of its stored bytes; exact stored
+retries need no object request, while differently encoded retries need one original
+GET and locked recheck. These are derived costs, not timing measurements. Public
+admission, credentials, streaming/lifecycle records, application replay adapters,
+production limits and full host/catalog recovery remain separate work.
 
 ## Saved-object kind discrimination
 
@@ -127,12 +245,13 @@ kind-specific payload schemas together. A future incompatible change to either
 requires an explicit supported-version decision. EnvelopeCodec frames bytes without
 parsing their payload; SpanCodec now supplies the internal version-1 span schema.
 Earlier synthetic composed-test payloads do not freeze a public format. Production byte
-limits and the capture schema remain open. Span and capture remain independent
+limits and public capture admission remain open; CaptureCodec supplies the internal
+version-1 capture schema. Span and capture remain independent
 records. Future lifecycle events need their separate identities and contracts;
 reserving the ability to distinguish them does not implement or accept them.
 No accepted object is rewritten. SpanCodec and ingest.Spans now implement typed
 final-span preparation, payload decoding and logical retry resolution. Capture-body
-schemas remain separate. Envelope Encode borrows stable prepared bytes and returns an
+schemas remain separate and CaptureCodec now implements them. Envelope Encode borrows stable prepared bytes and returns an
 independent stored buffer. Decode expects caller-verified size/digest and a
 catalog-authorized kind, returning independent payload bytes or nil on every
 error. It checks the whole stored cap, minimum header length and magic, supported
@@ -260,7 +379,7 @@ separate stream boundaries. Those mechanisms support both alternatives. Our choi
 keeps standard reader behavior because Rewind needs one logical payload, not one
 compression part. Runtime envelope and lab tests check joined output, whole-input/combined-output
 limits and refusal before payload parsing when a later member fails. SpanCodec parses final-span
-payloads; capture payload parsing remains open. Byte caps alone do not bound elapsed CPU or peak memory;
+payloads; CaptureCodec now parses capture payloads. Byte caps alone do not bound elapsed CPU or peak memory;
 empty members and headers consume stored bytes even when they add no output.
 
 ## Two entrances to one acceptance path
@@ -379,7 +498,8 @@ entity references, then decodes them after original input mutation. A property
 fuzzer compares selected reconstruction against cloning/pruning the input, with
 individual codec round trips for encodable selections. That is memory/format evidence, not host-loss
 or remote durability evidence. SpanCodec and the typed coordinator now use this association for bounded internal
-final-span admission; capture schemas and public receiver semantics remain open.
+final-span admission; the internal capture schema is now implemented, while public
+receiver semantics remain open.
 
 ## Explicit ended-span declaration
 

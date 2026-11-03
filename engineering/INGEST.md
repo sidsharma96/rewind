@@ -2,8 +2,9 @@
 
 Status: implemented as an internal coordinator with controlled test backends.
 PostgreSQL and R2 are the chosen architecture. Internal adapters now cover
-ownership registration, record publication/lookup and immutable objects; typed acceptance
-and a remotely deployed catalog do not exist yet.
+ownership registration, record publication/lookup and immutable objects. Internal
+typed span/capture acceptance and saved-byte playback now compose with these adapters;
+a remotely deployed catalog and real credential verification remain absent.
 The controlled experiment isolates ordering and error handling. A composed native
 test now joins Store, PostgreSQL registration/publication/lookup and the object SDK
 against a controlled HTTP peer. It covers discarded successful publication replies,
@@ -27,9 +28,13 @@ response bytes exactly. Outer transport JSON field order and spacing must not
 create a conflict; formatting differences within captured bytes still matter.
 Trace and span keys are fixed-size nonzero binary OpenTelemetry IDs; project
 identifiers remain opaque bounded strings. Validation precedes authorization and
-storage access. The metadata field schema, full semantic validation and deterministic
-record encoding need a separate checkpoint. The coordinator does not parse or
-normalize transport JSON or check opaque contents against the supplied key yet.
+storage access. The legacy Store still does not parse opaque contents against the key. The typed
+Spans and Captures coordinators validate their own payloads and compare decoded
+contents with the rules in [the capture contract](CAPTURE.md#typed-capture-and-saved-response).
+They share the Store admission gate and native transaction state machine. TraceReader
+discovers execution IDs from current project/trace pages; Captures.Playback returns
+a complete saved response with request availability, using current reader permission.
+Public admission and application-specific replay remain unimplemented.
 
 Separate authorization methods approve a writer for the exact execution or an
 explicit project reader before storage access. Tests supply controlled principals;
@@ -192,10 +197,11 @@ does not ingest. Trusted fixture principals do not verify real credentials.
 | --- | --- |
 | Both span and capture acknowledged | Both records retain their bytes, references, original attribution and times |
 | Conditional PUT stored, HTTP response disconnected | The adapter verifies with GET; accepted records survive writer termination |
-| Capture COMMIT response lost on the PostgreSQL connection | Store reports uncertain with no receipt; the committed capture is found after writer termination |
+| Typed span COMMIT response lost on the PostgreSQL connection | Spans reports uncertain with no receipt; its committed span and earlier capture are found after writer termination |
 | Capture uploaded, writer killed before Publish | Span remains accepted; capture lookup is absent despite the retained object; explicit retry creates its first acceptance |
 
-The local PostgreSQL fault proxy is armed at the capture-publication barrier. It
+The original drill arms the local PostgreSQL fault proxy at typed span publication;
+the typed-capture drill also arms it at capture publication. It
 observes `CommandComplete(COMMIT)` and idle `ReadyForQuery`, withholds both and
 disconnects. This exercises pgx's actual commit-response error path rather than
 discarding a successful Go method result. It is limited to explicitly plaintext
@@ -204,21 +210,33 @@ disconnects after storing an actual conditional PUT. No failure point relies on 
 sleep. Child processes are killed and joined on failure; proxy connection pairs,
 message bodies and lifetimes are bounded and their goroutines are joined.
 
-In every case a changed opaque span body conflicts and leaves the accepted span
-unchanged; its unreferenced object is retained. A further process using revoked
-reader/writer grants is refused without object requests, and original receipts
-remain unchanged after the test restores the grants. Span and capture still have
-independent acceptance; this does not introduce an atomic pair or batch.
+In every case changed typed span metadata conflicts and leaves the accepted span
+unchanged without uploading a known-conflicting candidate. A further process using
+revoked reader/writer grants is refused without object requests, and original
+receipts remain unchanged after the test restores the grants. Span and capture
+still have independent acceptance; this does not introduce an atomic pair or batch.
 
 The fixture counts HTTP body bytes read/written, excluding headers, protocol/SDK
 buffers and guaranteed network delivery. For its 187-byte gzip span envelope and
-12-byte plain capture envelope, the initial writes use four GETs, two PUTs, 199
-request-body bytes and 273 response-body bytes. Replacement reads, exact retries,
-one conflicting upload and a final preserved-span read use seven GETs and one PUT,
-188 request-body bytes and 810 response-body bytes. Before-publication crash uses
-one fewer GET and 12 fewer response bytes because catalog absence stops the read.
-The first two authorized reads alone require two GETs when both records exist.
-These are recorded synthetic operation counts, not timings or production estimates.
+12-byte plain legacy capture envelope, the initial writes use four GETs, two PUTs,
+199 request-body bytes and 273 response-body bytes. Replacement reads, exact retries,
+one rejected typed conflict and a final preserved-span read use five GETs, zero
+PUTs and 585 response-body bytes. Before-publication crash uses four GETs and 573
+response bytes because catalog absence stops the read; the explicit capture retry
+then performs its first catalog acceptance using the retained object. These are
+recorded synthetic operation counts, not timings or production estimates.
+
+The typed-capture drill extends this existing child-process harness. Alice records
+a handoff, and Bob records separate failed and successful tool invocations in the
+same trace. The controlled wrapper exposes no result on its first HTTP failure;
+the second result is complete with its request deliberately redacted. After both
+writers are killed/reaped and their directories removed, and after the tool is
+stopped, a new reader receives only project/trace plus storage configuration. It
+finds all three spans, inspects unavailable evidence, refuses failed-result playback
+and returns the exact saved successful response with mandatory request availability.
+Original receipts and independent owners survive both acknowledged publication and
+an actual capture COMMIT reply loss. This workload makes seven GETs and zero PUTs
+or tool calls during recovery; current-reader denial makes no object request.
 
 This establishes a process boundary with surviving test services. The test parent
 still owns the in-memory object service, PostgreSQL remains available, and both

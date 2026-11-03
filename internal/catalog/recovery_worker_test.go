@@ -32,12 +32,16 @@ type recoveryConfig struct {
 	CaptureAccepted                      bool
 	TraceProject                         string
 	TraceID                              traceid.Trace
+	Registrations                        []ingest.Registration
+	ToolURL                              string
 }
 
 type recoveryEvent struct {
 	Phase    string
 	Resume   bool
 	Receipts [2]ingest.Receipt
+	Spans    []ingest.Receipt
+	Captures []ingest.Receipt
 }
 
 func recoverySend(t *testing.T, out *json.Encoder, event recoveryEvent) {
@@ -80,6 +84,17 @@ func (c *recoveryPublication) PublishSpan(ctx context.Context, ref ingest.Refere
 		}
 	}
 	return c.Catalog.PublishSpan(ctx, ref, a)
+}
+
+func (c *recoveryPublication) PublishCapture(ctx context.Context, ref ingest.Reference, a ingest.Attribution) (ingest.Receipt, bool, error) {
+	if c.fault == "capture-commit-reply" && ref.Identity.Span == (traceid.Span{44}) {
+		recoverySend(c.t, c.out, recoveryEvent{Phase: "capture-publishing"})
+		var command recoveryEvent
+		if err := c.in.Decode(&command); err != nil || !command.Resume {
+			return ingest.Receipt{}, false, errors.New("capture publication barrier interrupted")
+		}
+	}
+	return c.Catalog.PublishCapture(ctx, ref, a)
 }
 
 func recoveryEnded(t *testing.T, r ingest.Registration) record.EndedSpan {
@@ -171,12 +186,12 @@ func TestRecoveryWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	var catalog ingest.SpanCatalog = c
-	if config.Role == "writer" {
+	if config.Role == "writer" || config.Role == "capture-writer" {
 		catalog = &recoveryPublication{Catalog: c, fault: config.Fault, in: in, out: out, t: t}
 	}
 	authorizer := publicationAuthorizer{project: config.Registration.Execution.Tenant,
 		writer: ingest.Attribution{Owner: config.Registration.Owner, SubmittedBy: "collector"}}
-	if config.Role == "trace-reader" || config.Role == "trace-denied" {
+	if config.Role == "trace-reader" || config.Role == "trace-denied" || config.Role == "capture-reader" || config.Role == "capture-denied" {
 		authorizer.project = config.TraceProject
 	}
 	store, err := ingest.New(authorizer, objects, catalog, ingest.Limits{MaxRecordBytes: 4096, MaxActive: 2})
@@ -189,6 +204,14 @@ func TestRecoveryWorker(t *testing.T) {
 	}
 	if config.Role == "trace-reader" || config.Role == "trace-denied" {
 		traceRecoveryRead(t, ctx, spans, config, out)
+		return
+	}
+	if config.Role == "capture-reader" || config.Role == "capture-denied" {
+		captureRecoveryRead(t, ctx, spans, config, out)
+		return
+	}
+	if config.Role == "capture-writer" {
+		captureRecoveryWrite(t, ctx, spans, config, in, out)
 		return
 	}
 	bodies, codec := recoveryBodies(t, config.Registration)

@@ -13,10 +13,10 @@ type writeOperation uint8
 const (
 	checkWrite writeOperation = iota
 	publishRecord
-	inspectSpan
-	publishSpan
-	resolveEqualSpan
-	resolveDifferentSpan
+	inspectTyped
+	publishTyped
+	resolveEqualTyped
+	resolveDifferentTyped
 )
 
 // InspectSpan returns the original receipt to trusted retry coordination, not to
@@ -26,7 +26,7 @@ func (c *Catalog) InspectSpan(ctx context.Context, id ingest.Identity, writer in
 	if id.Kind != ingest.SpanRecord {
 		return ingest.Receipt{}, false, ingest.ErrInvalid
 	}
-	original, err := c.write(ctx, id, writer, inspectSpan, nil)
+	original, err := c.write(ctx, id, writer, inspectTyped, nil)
 	if err != nil {
 		return ingest.Receipt{}, false, err
 	}
@@ -41,7 +41,7 @@ func (c *Catalog) PublishSpan(ctx context.Context, ref ingest.Reference, writer 
 	if ref.Identity.Kind != ingest.SpanRecord || ref.Size < 0 {
 		return ingest.Receipt{}, false, ingest.ErrInvalid
 	}
-	original, err := c.write(ctx, ref.Identity, writer, publishSpan, &ref)
+	original, err := c.write(ctx, ref.Identity, writer, publishTyped, &ref)
 	if err != nil {
 		return ingest.Receipt{}, false, err
 	}
@@ -55,9 +55,9 @@ func (c *Catalog) ResolveSpan(ctx context.Context, expected ingest.Reference, wr
 	if expected.Identity.Kind != ingest.SpanRecord || expected.Size < 0 {
 		return ingest.Receipt{}, ingest.ErrInvalid
 	}
-	operation := resolveDifferentSpan
+	operation := resolveDifferentTyped
 	if equal {
-		operation = resolveEqualSpan
+		operation = resolveEqualTyped
 	}
 	return c.write(ctx, expected.Identity, writer, operation, &expected)
 }

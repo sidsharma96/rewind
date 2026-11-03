@@ -29,14 +29,21 @@ planned behavior distinct from implemented behavior. The CLI is still only a
 command-line entry point. An internal ingest coordinator is exercised with controlled
 test backends; native PostgreSQL registration/publication/lookup now composes with the R2
 object adapter in disposable-database/controlled-HTTP tests. A public capture format,
-real credential verification and replay remain unimplemented. Internal typed
-ended-span save/read and semantic retries now compose with those adapters.
+real credential verification and application replay remain unimplemented. Internal
+typed ended-span and capture save/read/semantic retries compose with those adapters.
+Recorded byte playback returns a complete Present response with mandatory request
+availability, execution and original receipt, even when the request is unavailable.
+Missing/Redacted/Truncated responses refuse playback; Present zero-byte results are
+valid. No new request matching, tool call fallback or synthesized exception exists.
 Internal trace-ID reads use bounded current pages through the same coordinator
 gate. Continuation is a scoped key position, not a membership snapshot or reader
 permission; refresh from the beginning discovers late arrivals behind it. A
 trace-ID-only replacement-process test recovers Alice and Bob's independently
 owned final spans after both writers are killed/reaped and their working directories
-removed. Capture bodies, real credentials and actual host/catalog recovery remain open.
+removed. The typed-capture drill additionally records separate failed/successful
+tool attempts, stops the tool and writers, then discovers and returns saved bytes
+from project/trace alone, including actual capture COMMIT-response loss. Real
+credentials and actual host/catalog recovery remain open.
 The private `rewind-dev` bucket exists; its scoped live probe passes
 creation/retry, conditional overwrite rejection, locally discarded PUT replies and
 fresh-client reads. A separate-process drill kills/reaps the writer and removes
@@ -202,12 +209,13 @@ future kind as a final span. The label grants no authority and cannot reconstruc
 acceptance. `record.EnvelopeCodec` now implements the seven-byte `RWND` prefix,
 version 1, span/capture tags 1/2 and plain/gzip tags 0/1. The version covers the
 whole format revision; SpanCodec now defines its internal final-span payload.
-Capture schemas remain open, and synthetic capture fixtures do not freeze them.
+`record.CaptureCodec` now defines the internal capture payload; synthetic opaque
+fixtures do not freeze a public receiver schema.
 Map catalog kinds explicitly rather than casting
 `ingest.Kind`. Decode requires caller-verified size/digest and an authorized
 expected kind, checks labels before decompression, and returns owned payloads or
-nil on error. Typed final-span admission is internal; public interfaces, capture
-codecs and production limits remain open; see `engineering/CAPTURE.md#saved-object-kind-discrimination`.
+nil on error. Typed span/capture admission is internal; public interfaces and
+production limits remain open; see `engineering/CAPTURE.md#saved-object-kind-discrimination`.
 Envelope record kind is separate from descriptive OTLP span kind, whose unknown
 numeric values must still be preserved under the policy above.
 The first envelope omits an exact expanded-payload length. Enforce separate stored
@@ -221,8 +229,9 @@ Revisit for a required consumer or measured workload that needs a narrower rule.
 The envelope codec implements these byte boundaries with explicit limits and the
 agreed configurable compression policy; final-span payload decoding and typed
 admission now use `record.SpanCodec` and
-`ingest.Spans`. Capture-body schemas, public admission and production byte limits
-remain open. Blank span names are preserved as unknown evidence, with display
+`ingest.Spans`; `record.CaptureCodec` and `ingest.Captures` add internal typed
+capture bodies and saved-response playback. Public admission and production byte
+limits remain open. See `engineering/CAPTURE.md#typed-capture-and-saved-response`. Blank span names are preserved as unknown evidence, with display
 fallback separate from saved metadata. Revisit for a required consumer that cannot
 safely expose an unknown name, using its concrete failure before changing acceptance.
 
