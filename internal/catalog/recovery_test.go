@@ -198,12 +198,12 @@ func TestWriterProcessRecovery(t *testing.T) {
 			replacement.finish(t, false)
 			after := peer.snapshot()
 			delta := after.minus(before)
-			want = recoveryTraffic{GET: 7, PUT: 1, Request: s + 1, Response: 4*s + 2*c + 1 + missing}
+			want = recoveryTraffic{GET: 5, Response: 3*s + 2*c}
 			if !config.CaptureAccepted {
 				want.GET-- // Catalog absence must not fetch the unaccepted object.
 				want.Response -= c
 			}
-			if delta != want || peer.peer.count() != 3 {
+			if delta != want || peer.peer.count() != 2 {
 				t.Fatalf("replacement traffic differs: got %+v want %+v", delta, want)
 			}
 			for i, receipt := range result.Receipts {
@@ -229,7 +229,7 @@ func TestWriterProcessRecovery(t *testing.T) {
 					t.Fatal("denied operation changed accepted state")
 				}
 			}
-			t.Logf("writer killed/reaped; cwd removed; writer %+v; replacement read/retry/conflict %+v; denial zero object requests; orphan retained", before, delta)
+			t.Logf("writer killed/reaped; cwd removed; writer %+v; replacement read/retry/conflict %+v; denial zero object requests; typed conflict has no candidate upload; pre-publication capture retained", before, delta)
 		})
 	}
 }

@@ -4,8 +4,9 @@ This describes agreed contracts and implementation boundaries. The CLI provides
 help/version only. The internal ingest coordinator runs against controlled test
 backends. Ownership registration, record publication and known-record lookup have a native-pgx
 PostgreSQL adapter; immutable objects have an AWS SDK v2 R2 adapter. A composed
-PostgreSQL/controlled-HTTP test exercises saving, fresh reads and retries. A public
-capture format, typed acceptance and replay runtime remain unimplemented.
+PostgreSQL/controlled-HTTP test exercises saving, fresh reads and retries. The internal typed ended-span coordinator now validates, saves and reads known
+span records, including equivalent differently encoded retries. A public capture
+format, credential verification and replay runtime remain unimplemented.
 Its separate-process drill also kills/reaps a writer and removes its working
 directory before recovering accepted records through new clients. Controlled
 HTTP PUT-response loss and actual local PostgreSQL COMMIT-response loss are
@@ -66,12 +67,13 @@ Concordance's shared object library is a bounded reuse direction. It must preser
 the application outcome above and justify its concrete consumer or maintenance
 benefit; a shared cache, service or engine is not selected by that direction.
 
-The proposed next implementation checkpoint is typed ended-span acceptance joined
-to authorized saving and fresh decoding. Its integration example should retain the
-two-agent shared-trace context and refuse identity/owner mismatches. It remains an
-internal milestone until real credentials and the remaining product path exist.
-Define its input, observable result and failure checks before implementation;
-preserve this long-term scenario when choosing that narrower scope.
+The internal typed ended-span checkpoint joins checked one-span payloads to
+owner-aware publication and fresh decoding. Its native composition test saves two
+independently owned agents' records in one trace; its process drill replaces the
+writer and recovers a typed failed span. These use controlled principals and
+surviving local services. They leave real authentication, bounded trace enumeration,
+capture-body acceptance and actual host/catalog recovery open; they do not deliver
+the complete acceptance scenario above.
 
 ## Agreed requirements
 
@@ -94,7 +96,7 @@ adapter and dependency-substitution policy. Do not promise that external models
 produce identical output. A trace may omit inputs required for replay; expose
 capture completeness and redaction rather than inventing missing state.
 
-The initial typed span path will accept ended spans, including ended failed calls,
+The internal typed span path accepts ended spans, including ended failed calls,
 as one immutable final record. Registration may precede completion; it establishes
 authority, not a saved span or evidence that the call finished. Never save a start
 snapshot into that final span slot and overwrite it later. A process crash before
@@ -117,8 +119,9 @@ a separate per-execution catalog completion transition before saving the final
 span. Existing ownership, run admission, delivery and retention checks still apply.
 The internal `Span.DeclareEnded` operation returns a borrowed `EndedSpan` after
 checking the execution IDs; a zero declaration cannot expose a view. The encoding
-lab consumes this declaration, but runtime typed submission, complete validation
-and saved encoding remain unimplemented. See the
+lab and internal typed coordinator consume this declaration. `record.SpanCodec`
+prepares and decodes a bounded supported one-span payload; it is not a general
+OTLP semantic-conformance validator. See the
 [declaration contract](CAPTURE.md#explicit-ended-span-declaration).
 
 Preserve reported span timestamps even when the end precedes the start. Derive a
@@ -170,8 +173,8 @@ logical-content digest. Identical stored bytes take the quick path. Comparison
 I/O must stay outside catalog locks; final resolution rechecks current authority,
 expiry and the compared reference. Writer-scoped comparison must not require or
 confer project-reader access. The [comparison design](CAPTURE-ENCODING.md#retry-comparison-direction)
-records the trade-off and failure boundaries. It is not implemented by the opaque
-coordinator or native catalog yet.
+records the trade-off and failure boundaries. `ingest.Spans` and the native catalog implement it for final-span metadata;
+the opaque coordinator and capture records retain exact-byte equality.
 
 ## Capture and OpenTelemetry
 
@@ -189,7 +192,7 @@ explicit JSON serialization boundary. The [metadata investigation](CAPTURE.md#ge
 checks that boundary. The selected serializer direction is a narrow adapter around
 `protojson`: numeric enums and hexadecimal IDs at actual span/link fields, without
 a parallel handwritten metadata schema or Collector data model. The concrete `record.MetadataCodec` now implements that boundary; the maintained
-lab delegates to it before typed acceptance integration. Its byte, graph-work and
+lab and internal typed span coordinator delegate to it. Its byte, graph-work and
 nesting limits are explicit configuration, not selected production defaults. The selected internal-record
 policy refuses unsupported metadata rather than discard it: unknown protobuf wire
 fields anywhere in the metadata must fail before JSON encoding. Known kind/status
@@ -198,7 +201,8 @@ consumers must handle an explicit unknown category. Revisit this policy if a req
 consumer cannot safely expose an unknown category, using its concrete failure case
 before changing acceptance. The [numeric-value contract](CAPTURE.md#numeric-kind-and-status-values)
 records that integration checkpoint. Lab round-trip, refusal and property tests
-cover representation; runtime admission and consumers remain unimplemented.
+cover representation; the typed span coordinator now applies these rules in
+preparation and retry comparison. Display/replay consumers remain unimplemented.
 Received span and link flags retain all 32 bits, including unfamiliar bits; each
 full unsigned value remains retry content. Future consumers interpret documented
 bits through masks without replacing the saved value or inferring authority.
@@ -224,7 +228,8 @@ remains the copying test oracle. The selected
 [direct comparison](CAPTURE.md#direct-metadata-comparison) checks both bounded,
 supported, attribute-ordered span views before comparing without copying their
 contents. The metadata codec implements it and the lab checks it against a copying oracle,
-with stable borrowed inputs and explicit errors; runtime retry resolution remains unimplemented. Other fields and schema URLs remain evidence. Revisit if a
+with stable borrowed inputs and explicit errors; the typed coordinator now uses
+it for runtime final-span retry resolution. Other fields and schema URLs remain evidence. Revisit if a
 required consumer needs empty-shell presence itself to affect retry-content identity.
 Links with absent or correctly sized all-zero target IDs retain their received
 evidence, including empty link messages; derive an explicit unavailable target.
@@ -232,10 +237,14 @@ The internal `record.TargetOfLink` helper copies a key only for two nonzero IDs,
 and refuses wrong nonempty widths. A usable key grants no authority or guarantee
 of existence; the containing span's own IDs stay strict. The
 [link contract](CAPTURE.md#links-without-usable-targets) covers preservation, retry
-distinctions and the consumer integration checkpoint. Runtime typed admission,
-viewer navigation and replay integration remain unimplemented.
-Full saved schema, remaining normalization, semantic validation and version/equality rules
-remain open.
+distinctions and the consumer integration checkpoint. Typed span preparation/decoding preserves these targets; viewer navigation and
+replay integration remain unimplemented.
+The internal saved final-span schema is bounded one-span metadata JSON under the
+version-1 envelope. Capture-body schemas, public admission and future-version
+compatibility remain open. Blank operation names remain unknown evidence; never
+insert a saved placeholder. A changed name is changed retry content. Revisit for
+a required consumer unable to safely expose an unknown name and show its concrete
+failure before changing acceptance.
 The selected saved layout is hybrid: versioned framing, JSON
 metadata and exact raw bodies. The [encoding experiment](CAPTURE-ENCODING.md)
 supports this direction. The internal `record.EnvelopeCodec` uses a fixed seven-byte common envelope for the format version,
@@ -245,7 +254,7 @@ against the authorized catalog's expected kind and refuse unsupported or mismatc
 kinds before payload interpretation. This label supplies no authority or catalog
 reconstruction. The [kind-discrimination contract](CAPTURE.md#saved-object-kind-discrimination)
 records the choice; its `RWND` prefix and explicit version/kind/encoding tags are implemented, while
-kind-specific payload schemas and production limits remain open. Version 1 denotes
+the capture payload schema and production limits remain open. Version 1 denotes
 the whole format revision, not only the header; synthetic test payloads do not
 freeze a public payload format. The codec requires caller-verified integrity and
 a catalog-authorized expected kind. The first common envelope omits an exact expanded-payload
@@ -258,8 +267,8 @@ complete valid member sequences as one logical payload, including empty members;
 the stored and expanded limits cover the whole input and combined output. Invalid
 later members and non-member trailing bytes fail before payload parsing. The writer
 will emit one member. The [member contract](CAPTURE.md#gzip-member-sequences) records
-the compatibility choice and runtime framing checks; kind-specific saved payload
-decoding remains open.
+the compatibility choice and runtime framing checks; final-span payload decoding now uses `SpanCodec`, while capture payload decoding
+remains open.
 The selected compression policy skips records below a size
 threshold and otherwise keeps gzip only if smaller. Its selected starting default
 is a configurable 32 KiB for the complete uncompressed hybrid record, including
@@ -268,7 +277,8 @@ threshold attempts compression. Use configurable gzip BestSpeed as the starting
 setting, favoring lower compression CPU and allocation over the extra size savings of
 DefaultCompression. The metadata codec includes owned attribute ordering, but
 the envelope codec now exposes explicit byte bounds and compression policy.
-Complete saved-record schemas, typed admission and logical retry resolution remain open.
+Internal typed final-span admission and logical retry resolution are implemented.
+Capture schemas, public interfaces and production limits remain open.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
 needed for replay; missing capture must not be represented as an empty request or
