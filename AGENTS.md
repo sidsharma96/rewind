@@ -29,7 +29,10 @@ planned behavior distinct from implemented behavior. The CLI is still only a
 command-line entry point. An internal ingest coordinator is exercised with controlled
 test backends; native PostgreSQL registration/publication/lookup now composes with the R2
 object adapter in disposable-database/controlled-HTTP tests. A public capture format,
-real credential verification and application replay remain unimplemented. Internal
+a public receiver and application replay remain unimplemented. Internal opaque
+credential verification, current native permission checks and trusted SDK-ID
+registration are implemented. Credential distribution/rotation and authenticated
+run controls remain absent. Internal
 typed ended-span and capture save/read/semantic retries compose with those adapters.
 Recorded byte playback returns a complete Present response with mandatory request
 availability, execution and original receipt, even when the request is unavailable.
@@ -129,14 +132,18 @@ collectors acting for producers need explicit scoped authority. Telemetry labels
 and first arrival do not prove ownership. Writing authority is scoped to one agent
 instance in one run in one project; stable agent names do not grant cross-instance
 or cross-run authority. The chosen binding is trusted catalog registration before
-record acceptance. Its internal Registrar and Store use controlled capabilities.
-Store requires owner-aware catalog checks and explicit project-reader permissions;
-real credential verification is absent. The native publication adapter repeats
+record acceptance. Its Registrar and Store retain trusted capability boundaries.
+The internal access adapter verifies separate opaque credentials and derives owners
+from registered bindings plus current native grants. Scoped host_creator_grants
+permit trusted host SDK-ID registration without granting ordinary writers creation
+authority. Operator setup remains trusted SQL; no public receiver or general grant
+service exists. Store requires owner-aware catalog checks and explicit project-reader permissions. The native publication adapter repeats
 current writer/binding/run/expiry checks; do not expose the controlled capabilities
 or treat legacy unattributed records as retroactively authorized; see `engineering/CAPTURE.md`.
 Read access requires an explicit project-reader permission, covering span and
 capture across the project. Owning/writing an execution grants no automatic read
-access. Controlled tests exercise this policy; real credential verification is absent.
+access. Native authenticated tests exercise this policy through fresh clients;
+controlled process drills do not yet verify credentials or establish host loss.
 
 The Concordance coordination direction is a small in-process Go object-storage
 library. Establish its contract with a write/read/recovery sequence from each

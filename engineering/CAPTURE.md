@@ -1251,7 +1251,8 @@ authorized debugger follow several agents' records while keeping writing authori
 restricted to the correct instance. Narrower per-run/instance read grants would
 reduce reader exposure but add grant management and potentially partial views;
 they are deferred. Store now requires these separate capabilities; tests exercise
-them with controlled identity and grant state, not real authentication.
+them with controlled identity and grant state. An additional internal credential
+adapter now verifies separate principals and checks current native grants.
 
 For example, A owns an execution and B belongs to the same project. B guesses its
 trace/span identity and sends capture before A sends the span. Rewind must refuse
@@ -1390,16 +1391,23 @@ The native registration adapter now persists bindings and checks creator grants
 and both run states in PostgreSQL; see [the SQL scope](POSTGRES.md#first-native-operation).
 The same adapter now implements owner-aware CheckWrite and Publish, reads records
 under exact project-reader grants and saves expiry when needed. The composed local
-test joins that catalog to Store and the object SDK; real credential verification,
-remote catalog deployment and combined host-loss recovery remain absent. Do not
+test joins that catalog to Store and the object SDK. Internal credential
+verification and native permission checks now also compose with typed saving and
+reading; public reception, remote catalog deployment and combined host-loss
+recovery remain absent. Do not
 substitute an unrelated binding store and treat it as enforced record acceptance.
 Its installer requires a new owned schema; it migrates no legacy dataset.
 
 
 For OTLP, keep the standard span format and authenticated exporter transport. The
 agreed integration direction is a small helper in the trusted host application
-that creates a normal span and registers its actual IDs. The helper, credentials,
-receiver and collector delegation are not implemented. A shared collector must
+that creates a normal span and registers its actual IDs. `producer.Host` now
+registers an actual SDK SpanContext for its configured project/run/instance; it
+exports no metadata. Separate `host_creator_grants` give that trusted host creation
+authority without changing exact-call creator grants or implying writer/read
+permission. Registration repeats the current scope check under its project gate.
+`access.Credentials` verifies opaque per-principal tokens; public reception,
+credential distribution/rotation and a collector forwarding protocol remain open. A shared collector must
 preserve verified attribution rather than trust arbitrary agent labels; its own
 credential authenticates only that collector. Standard exporter headers identify
 the submitting credential but do not establish the execution-to-owner binding.
