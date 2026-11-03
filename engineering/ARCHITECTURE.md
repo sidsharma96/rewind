@@ -6,8 +6,10 @@ backends. Ownership registration, record publication and known-record lookup hav
 PostgreSQL adapter; immutable objects have an AWS SDK v2 R2 adapter. A composed
 PostgreSQL/controlled-HTTP test exercises saving, fresh reads and retries. The internal typed ended-span coordinator now validates, saves and reads known
 span records, including equivalent differently encoded retries. An internal bounded
-trace reader now discovers final spans from project and trace ID alone. A public capture
-format, credential verification and replay runtime remain unimplemented.
+trace reader now discovers final spans from project and trace ID alone. Internal
+typed captures save exact request/response bytes with explicit availability, and
+authorized recorded-byte playback returns complete saved responses. A public
+capture format, credential verification and application replay runtime remain unimplemented.
 Its separate-process drill also kills/reaps a writer and removes its working
 directory before recovering accepted records through new clients. Controlled
 HTTP PUT-response loss and actual local PostgreSQL COMMIT-response loss are
@@ -49,7 +51,8 @@ Use one acceptance scenario to keep implementation steps connected to that outco
    again is a separate operation with its own adapter and comparison contract.
 
 This scenario is a completion target, not a claim that producers, authentication,
-trace assembly, an inspection interface, playback or host-loss recovery exist now.
+complete trace assembly, an inspection interface or host-loss recovery exist now.
+Internal controlled producers and saved-byte playback exercise parts of it.
 The precise first-release interface, supported playback workload, operating limits
 and deployment/recovery acceptance tests still need concrete scopes before release.
 
@@ -74,8 +77,33 @@ independently owned agents' records in one trace; its process drill replaces the
 writer and recovers a typed failed span. These use controlled principals and
 surviving local services. A separate trace-ID-only process drill now discovers both
 agents' final spans after both writers are killed/reaped and their working directories
-removed. They leave real authentication, capture-body acceptance and actual host/catalog recovery open; they do not deliver
+removed. The capture drill adds Alice's handoff and Bob's separate failed/successful
+tool attempts, shuts down both writers and the controlled tool, then discovers and
+plays back the available response from project/trace alone. Actual capture COMMIT
+reply loss returns uncertainty before the new process finds its original acceptance.
+These leave real authentication and actual host/catalog recovery open; they do not deliver
 the complete acceptance scenario above.
+
+### Current capture and saved-result operation
+
+`record.CaptureCodec` implements the internal version-1 capture payload described in
+[the capture contract](CAPTURE.md#typed-capture-and-saved-response). Request and response
+each carry Missing, Redacted, Truncated or Present state, with exact raw bytes where
+permitted. Present includes a valid zero-byte body; unavailable capture is distinct
+from an absent/expired record or a failed read. Capture publication is independent
+of final-span arrival and retains one immutable capture per execution.
+
+`ingest.Captures` shares the typed span coordinator's admission bound and native
+catalog. It saves/reads typed captures and resolves retries by decoded state and
+exact body bytes, independently of header formatting and compression. It preserves
+the original receipt and repeats current authority/expiry/reference checks after
+outside-lock comparison. Its known-execution `Playback` returns a complete Present
+response with mandatory request availability, execution and original receipt. An
+unavailable request does not block that response; an unavailable response returns
+`ErrResultUnavailable`. No incoming request matching, live tool fallback or fabricated
+exception is part of this operation. Trace pages discover execution IDs but do not
+freeze a resumable playback membership set. Public admission, production limits and
+application-specific replay consumers remain open.
 
 ### Current trace-read pages
 
@@ -207,8 +235,9 @@ logical-content digest. Identical stored bytes take the quick path. Comparison
 I/O must stay outside catalog locks; final resolution rechecks current authority,
 expiry and the compared reference. Writer-scoped comparison must not require or
 confer project-reader access. The [comparison design](CAPTURE-ENCODING.md#retry-comparison-direction)
-records the trade-off and failure boundaries. `ingest.Spans` and the native catalog implement it for final-span metadata;
-the opaque coordinator and capture records retain exact-byte equality.
+records the trade-off and failure boundaries. `ingest.Spans`, `ingest.Captures` and
+the native catalog implement it for final-span metadata and typed capture bodies.
+The legacy opaque coordinator retains exact stored-byte equality.
 
 ## Capture and OpenTelemetry
 
@@ -274,7 +303,8 @@ of existence; the containing span's own IDs stay strict. The
 distinctions and the consumer integration checkpoint. Typed span preparation/decoding preserves these targets; viewer navigation and
 replay integration remain unimplemented.
 The internal saved final-span schema is bounded one-span metadata JSON under the
-version-1 envelope. Capture-body schemas, public admission and future-version
+version-1 envelope. Internal capture bodies now have their separate payload schema;
+public admission and future-version
 compatibility remain open. Blank operation names remain unknown evidence; never
 insert a saved placeholder. A changed name is changed retry content. Revisit for
 a required consumer unable to safely expose an unknown name and show its concrete
@@ -288,7 +318,7 @@ against the authorized catalog's expected kind and refuse unsupported or mismatc
 kinds before payload interpretation. This label supplies no authority or catalog
 reconstruction. The [kind-discrimination contract](CAPTURE.md#saved-object-kind-discrimination)
 records the choice; its `RWND` prefix and explicit version/kind/encoding tags are implemented, while
-the capture payload schema and production limits remain open. Version 1 denotes
+the internal capture payload schema is implemented and production limits remain open. Version 1 denotes
 the whole format revision, not only the header; synthetic test payloads do not
 freeze a public payload format. The codec requires caller-verified integrity and
 a catalog-authorized expected kind. The first common envelope omits an exact expanded-payload
@@ -301,8 +331,8 @@ complete valid member sequences as one logical payload, including empty members;
 the stored and expanded limits cover the whole input and combined output. Invalid
 later members and non-member trailing bytes fail before payload parsing. The writer
 will emit one member. The [member contract](CAPTURE.md#gzip-member-sequences) records
-the compatibility choice and runtime framing checks; final-span payload decoding now uses `SpanCodec`, while capture payload decoding
-remains open.
+the compatibility choice and runtime framing checks; final-span payload decoding
+uses `SpanCodec`, and capture payload decoding uses `CaptureCodec`.
 The selected compression policy skips records below a size
 threshold and otherwise keeps gzip only if smaller. Its selected starting default
 is a configurable 32 KiB for the complete uncompressed hybrid record, including
@@ -312,7 +342,7 @@ setting, favoring lower compression CPU and allocation over the extra size savin
 DefaultCompression. The metadata codec includes owned attribute ordering, but
 the envelope codec now exposes explicit byte bounds and compression policy.
 Internal typed final-span admission and logical retry resolution are implemented.
-Capture schemas, public interfaces and production limits remain open.
+The internal capture schema is implemented; public interfaces and production limits remain open.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
 needed for replay; missing capture must not be represented as an empty request or

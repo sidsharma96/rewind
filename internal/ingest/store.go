@@ -162,12 +162,15 @@ func New(authorizer Authorizer, objects Objects, catalog Catalog, limits Limits)
 
 // Write accepts one immutable record. The caller must not mutate
 // contents until return. Equality is exact opaque bytes for this experiment;
-// typed final spans use the separate Spans coordinator and logical comparison.
+// typed spans/captures use their coordinators and checked logical comparison.
 // Either kind may arrive first; no capture-body validation is performed.
-// Do not expose this primitive
-// directly as an attachment API. An error is never proof that a record with this
-// identity was not accepted by an earlier attempt. A preliminary lookup can refuse
-// work before upload, but only final publication decides acceptance.
+// Do not expose this primitive directly as an attachment API.
+// Opaque capture writes are legacy/test-only; mixing them with typed captures
+// under one identity can leave an undecodable original.
+// Typed readers and retry comparison fail closed rather than migrate those bytes.
+// An error is never proof this identity was not accepted by an earlier attempt.
+// A preliminary lookup can refuse work before upload, but only final publication
+// decides acceptance.
 func (s *Store) Write(ctx context.Context, id Identity, contents []byte) (Receipt, error) {
 	if len(contents) > s.limits.MaxRecordBytes {
 		return Receipt{}, ErrTooLarge
