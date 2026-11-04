@@ -27,6 +27,12 @@ The tests create fresh randomly named schemas and remove only those schemas.
 Without the variable, database tests skip; normal checks still require no database.
 Keep connection strings and credentials out of source and check logs.
 
+The [host-recovery driver](engineering/HOST-RECOVERY.md#driver-and-prerequisites)
+has separate native tests. Set `REWIND_DRILL_TEST_POSTGRES` to an explicitly
+disposable `rewind` database owned by `rewind_drill` before running
+`go test -race ./tools/recoverydrill`. These tests need no cloud credentials and
+remove only their randomly named schemas.
+
 The optional [R2 probe](engineering/OBJECTS.md#opt-in-development-bucket-probe)
 needs S3 credentials restricted to the private `rewind-dev` bucket. It is disabled
 by default and retains two small synthetic objects in a new namespace on each run.
