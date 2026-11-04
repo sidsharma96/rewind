@@ -3,7 +3,10 @@
 Status: internal adapter exercised against controlled HTTP peers and the private
 `rewind-dev` R2 bucket. The scoped live probe passed creation/retry, conditional
 overwrite rejection, a locally discarded successful PUT reply and fresh-client
-reads of both original and reconciled bytes.
+reads of both original and reconciled bytes. The separate
+[live host-recovery driver](HOST-RECOVERY.md) combines this adapter with a remote
+PostgreSQL catalog and verifies trace discovery, saved responses and retries on
+a fresh VM after destroying the ingest VM.
 Public r2.dev access is disabled, no custom domain is attached and no saved-object
 expiry rule is configured. The default unfinished-multipart abort rule is not
 accepted-record retention. AWS SDK for Go v2 is the selected client. This adapter implements `ingest.Objects`, not record
@@ -92,8 +95,9 @@ tenant separation, wrong bytes, huge XML/bodies, truncation, cancellation and bo
 closure. Source/race checks plus independent design and implementation reviews are
 required. Controlled tests establish behavior against a modeled peer. The opt-in live
 probe also observed this small sequence on R2; neither establishes a complete
-remotely durable ingest system, host-loss recovery or failover. Remote catalog
-publication and combined recovery remain necessary before exposing acceptance.
+remotely durable ingest system, host-loss recovery or failover. The separate live
+driver now tests combined remote catalog/R2 recovery across ingest-VM replacement;
+catalog restore/failover and provider loss remain untested.
 
 Sources: [R2 S3 compatibility](https://developers.cloudflare.com/r2/api/s3/api/)
 (conditional PUT is atomic against committed state), and
@@ -106,6 +110,9 @@ is extracted until both applications have exercised their own recovery contract.
 The comparison against Concordance revision
 `d6e7b19c29faf4816169067a545ba993b27ca5cd`, `internal/objectstore/store.go`
 (`EnsureVerified`, `Read`), finds the same strict GET/conditional-PUT/GET baseline.
+A source recheck at Concordance `bda56deabc651145967099f56cededb2ff410530`
+finds its `internal/objectstore` unchanged from that pinned comparison. This
+updates the inspected revision, rather than establishing a new joint API.
 Both projects now have controlled writer-process recovery sequences and an actual
 delivered comparison. That evidence is not a joint shared-library test or approval
 to extract. Rewind's process drill merged at
@@ -129,7 +136,7 @@ mapping still need joint design review before extraction.
 | Read length | ReadExact verifies expected stored size within an independent cap; Store repeats catalog checks | Reference carries exact size, checked by adapter within its cap |
 | Admission and timeout | Adapter bounds active calls and elapsed time | Caller owns admission and supplies a deadline |
 | Publication | Record catalog must accept identity/owner/reference | Catalog publishes an entire generation |
-| Recovery evidence | Separate writer killed/reaped, working directory removed; replacement finds committed span/capture through PostgreSQL and controlled objects | Writer killed/reaped and directory removed; fresh process recovers catalog-published generation and exact quotes; actual final COMMIT response loss exercised |
+| Recovery evidence | Live ingest VM destroyed; replacement discovers authenticated shared spans/captures through surviving remote PostgreSQL and R2 before receiving writer plans; actual COMMIT-response loss remains a separate local test | Writer killed/reaped and directory removed; fresh process recovers catalog-published generation and exact quotes; actual final COMMIT response loss exercised |
 
 Rewind's process drill observes both acknowledged acceptance and an actual lost
 PostgreSQL COMMIT response, plus a disconnected stored PUT and a crash before
@@ -143,6 +150,14 @@ and body-byte counts. Its completed retry returns the original generation withou
 object requests; an unpublished candidate remains invisible until explicit retry.
 Different record/generation fixtures are not comparative adapter performance.
 
+Rewind's [live replacement sequence](HOST-RECOVERY.md#observed-result) now adds
+remote catalog placement, live R2, verified opaque credentials and actual VM
+deletion. It preserves receipts across trace-only discovery and semantic retries
+without creating objects. This refreshes Rewind's comparison evidence; it is a
+prepared handoff, not a delivered new exchange, agreed shared API or extraction
+approval. The live application-reply fault does not add remote COMMIT-response-loss
+evidence, catalog recovery or provider-wide durability.
+
 Concordance also has verification receipts and a reuse component above its strict
 object path. Those do not establish Rewind's authorization, retention or acceptance
 and are not approved for shared extraction. Both process examples start with
@@ -155,10 +170,11 @@ or safe deletion.
 The coordination trigger is any proposed change to the object operations or their
 scope, integrity, bounds, retry/error, admission or timeout contract, including
 range reads, deletion and reuse/cache shortcuts. Review this checkpoint with the
-Concordance development agent before such work diverges. Also revisit immediately
-after Rewind's first native record publication and ingest-host replacement drill;
-do not wait for replay or the trace viewer. The shared code remains a small
-in-process library; this is not a message bus for agents running in either product.
+Concordance development agent before such work diverges. Rewind's native
+publication and live ingest-host replacement now supply that readiness evidence;
+revisit the joint contract before replay or the trace viewer. The shared code
+remains a small in-process library; this is not a message bus for agents running
+in either product.
 
 The handoff must name both source revisions and cover each application's authorized
 write, committed catalog reference, replacement-writer read, lost write/commit

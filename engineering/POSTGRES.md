@@ -5,8 +5,10 @@ PostgreSQL adapter, including CheckWrite/Publish. There is no public
 endpoint. Internal opaque credential verification now composes with native
 preliminary permission checks and authoritative operations. R2 objects have a separate adapter,
 with a private development bucket and a passing scoped write/retry/read probe. The first
-native integration tests use disposable PostgreSQL, not a remotely deployed
-production catalog.
+native integration tests use disposable PostgreSQL. A separate dedicated remote
+development catalog now survives actual ingest-VM destruction in the
+[live host-recovery drill](HOST-RECOVERY.md); production catalog restore and
+failover remain untested.
 
 ## Different calls may proceed together
 
@@ -101,7 +103,8 @@ ownership registration. Lookup still cannot register owners or create accepted
 records. Native publication uses current writer grants and the same registered
 bindings; composed tests save through Store rather than seed accepted rows.
 An internal credential adapter now derives principals and checks current native
-permissions; public reception and remote catalog deployment remain absent.
+permissions. Public reception remains absent; the live recovery driver now uses
+these same native operations against its dedicated remote development catalog.
 Persist kinds as explicit span/capture labels, digests as 32 bytes, size as a checked
 nonnegative bigint, bounded opaque owner/submitter IDs as bytea, and original catalog
 acceptance/expiry/marker instants as finite timestamptz values with increasing

@@ -4,7 +4,9 @@ Status: implemented as an internal coordinator with controlled test backends.
 PostgreSQL and R2 are the chosen architecture. Internal adapters now cover
 ownership registration, record publication/lookup and immutable objects. Internal
 typed span/capture acceptance and saved-byte playback now compose with these adapters;
-a remotely deployed catalog and real credential verification remain absent.
+opaque credential verification and current native grants are implemented. The
+[live host-recovery driver](HOST-RECOVERY.md) also composes them with a remote
+PostgreSQL catalog and live R2 across actual ingest-VM replacement.
 The controlled experiment isolates ordering and error handling. A composed native
 test now joins Store, PostgreSQL registration/publication/lookup and the object SDK
 against a controlled HTTP peer. It covers discarded successful publication replies,
@@ -12,7 +14,8 @@ fresh-client reads/retries and grant removal during upload. A separate-process
 drill now kills and reaps the writer, removes its private working directory, and
 recovers through a new process with surviving PostgreSQL and controlled HTTP
 services. These tests establish neither provider durability nor recovery after
-real host loss. No public endpoint,
+real host loss; the separate live driver tests that boundary with surviving
+remote stores. No public endpoint,
 wire format or shared storage library is added.
 
 ## One saved record
@@ -109,8 +112,10 @@ multi-span batch atomicity are not selected by this per-record experiment. It do
 not join span/capture records or check parent existence.
 Either record may be accepted first, as specified in [the capture design](CAPTURE.md).
 The absent peer does not block acceptance or reading of the existing record.
-Real authentication, body validation, automatic retention and query assembly are
-still absent; this primitive must not be exposed directly as a product attachment API.
+This opaque primitive does not itself implement credential verification, typed
+body validation, automatic retention or trace assembly; it must not be exposed
+directly as a product attachment API. The typed coordinators and internal access
+adapter supply the implemented body and authority checks described above.
 
 ## When one step fails
 
@@ -242,8 +247,10 @@ This establishes a process boundary with surviving test services. The test paren
 still owns the in-memory object service, PostgreSQL remains available, and both
 may share the same physical host. It does not establish ingest-machine loss,
 remote catalog placement, storage-service loss, real R2/provider faults, database
-failover/restore or zero-loss backups. A live drill remains necessary for those
-deployment claims. The smaller existing in-process test remains the baseline.
+failover/restore or zero-loss backups. The separate
+[live drill](HOST-RECOVERY.md) now tests actual ingest-VM destruction with remote
+PostgreSQL and R2 surviving; catalog and provider loss remain outside its evidence.
+The smaller existing in-process test remains the baseline.
 
 PostgreSQL 16's [message-flow contract](https://www.postgresql.org/docs/16/protocol-flow.html#PROTOCOL-FLOW-SIMPLE-QUERY)
 defines the completion/ready boundary; its
@@ -252,10 +259,11 @@ separate WAL flush from other durability modes. The proxy uses the existing
 pgx v5.11.0 `pgproto3.Frontend.Receive` and `SetMaxBodyLen`, not a new wire parser.
 These mechanisms establish the fault placement, not provider durability.
 
-Before any real success response, verify immutable R2 writes, checksum/size handling,
-PostgreSQL transactions and synchronous durability settings against deployed services.
-Place the catalog outside the ingest host. Test connection loss around COMMIT and
-replacement of the ingest host. Define database failover and restore guarantees:
+The live drill verifies immutable R2 writes, checksum/size handling, PostgreSQL
+transactions and synchronous durability settings with the catalog outside the
+destroyed ingest VM. Actual COMMIT-response loss remains a separate local fault
+test; the live driver suppresses an application reply after commit. Define and
+test database failover and restore guarantees:
 restoring an older catalog can lose accepted references even if every R2 object
 survives. Backups are not automatically a zero-loss failover protocol. Arbitrary
 catalog-service or R2 data loss is outside the agreed ingest-host-loss guarantee

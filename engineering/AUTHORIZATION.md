@@ -307,3 +307,10 @@ retry attribution and grant removal before object access. Separate HTTP tests us
 a certificate-verifying TLS client. The native objects remain a controlled HTTP
 peer; these tests do not supply a public receiver, automatic SDK exporter, remote
 catalog deployment or actual ingest-host destruction.
+
+The separate [live host-recovery driver](HOST-RECOVERY.md) now verifies distinct
+opaque credentials and the same native grants with remote PostgreSQL and live
+R2. A replacement VM discovers both owners' records and saved responses after
+the original ingest VM is destroyed; denied-reader probes make no object calls.
+Its trusted operator setup and synthetic principals do not implement credential
+distribution, rotation, public reception or authenticated run controls.

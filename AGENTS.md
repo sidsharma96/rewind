@@ -45,16 +45,21 @@ trace-ID-only replacement-process test recovers Alice and Bob's independently
 owned final spans after both writers are killed/reaped and their working directories
 removed. The typed-capture drill additionally records separate failed/successful
 tool attempts, stops the tool and writers, then discovers and returns saved bytes
-from project/trace alone, including actual capture COMMIT-response loss. Real
-credentials and actual host/catalog recovery remain open.
+from project/trace alone, including actual local capture COMMIT-response loss.
+The operator-only `tools/recoverydrill` now verifies distinct opaque credentials
+and native grants against a remote PostgreSQL catalog and live R2, destroys the
+ingest VM, then recovers both agents' spans/captures and saved responses on a fresh
+VM from project/trace alone before receiving writer plans. Identical retries
+retain original receipts without object creation. See `engineering/HOST-RECOVERY.md`.
 The private `rewind-dev` bucket exists; its scoped live probe passes
 creation/retry, conditional overwrite rejection, locally discarded PUT replies and
 fresh-client reads. A separate-process drill kills/reaps the writer and removes
 its working directory before fresh-process read/retry, with controlled
 PUT-response loss and actual local PostgreSQL COMMIT-response loss. Its surviving
-test services do not establish machine loss, remote catalog placement or provider
-durability. Complete ingest-host-loss and catalog recovery remain untested.
-Do not claim those tests establish remote durability.
+test services do not establish machine loss or provider durability. The separate
+live drill establishes its tested ingest-VM replacement with surviving remote
+catalog/R2, not catalog loss/restore/failover or provider-wide durability. Its
+withheld application acknowledgment is not remote PostgreSQL COMMIT-response loss.
 
 ## Design and implementation
 
@@ -142,8 +147,9 @@ current writer/binding/run/expiry checks; do not expose the controlled capabilit
 or treat legacy unattributed records as retroactively authorized; see `engineering/CAPTURE.md`.
 Read access requires an explicit project-reader permission, covering span and
 capture across the project. Owning/writing an execution grants no automatic read
-access. Native authenticated tests exercise this policy through fresh clients;
-controlled process drills do not yet verify credentials or establish host loss.
+access. Native authenticated tests exercise this policy through fresh clients.
+Controlled process drills use trusted principals; the separate live host-recovery
+driver verifies opaque credentials and native grants across ingest-VM replacement.
 
 The Concordance coordination direction is a small in-process Go object-storage
 library. Establish its contract with a write/read/recovery sequence from each
@@ -151,9 +157,10 @@ project before extracting shared code. Do not create a shared repository, cache,
 engine, schema or deployment on the strength of that direction alone. Preserve
 application-specific identity, authorization, catalogs, retention and acknowledgments.
 Read `engineering/OBJECTS.md#extraction-checkpoint` before changing object-storage
-contracts or adding range reads, deletion, verification reuse or caching. Revisit
-coordination after native publication and an ingest-host replacement drill, before
-replay/viewer work. Keep the handoff current and distinguish a prepared note from
+contracts or adding range reads, deletion, verification reuse or caching. Native
+publication and the live ingest-host replacement drill now supply Rewind's
+comparison evidence; revisit coordination before replay/viewer work. Keep the
+handoff current and distinguish a prepared note from
 a delivered cross-agent exchange or an agreed shared API.
 
 The first typed span path saves ended spans, including failures, as immutable final

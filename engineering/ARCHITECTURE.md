@@ -15,8 +15,14 @@ helper now compose with the typed record path; there is no public receiver.
 Its separate-process drill also kills/reaps a writer and removes its working
 directory before recovering accepted records through new clients. Controlled
 HTTP PUT-response loss and actual local PostgreSQL COMMIT-response loss are
-exercised. The storage services survive; this does not establish remote durability
-or ingest-machine replacement.
+exercised. These local process tests leave their storage services alive. A separate
+[live host-recovery driver](HOST-RECOVERY.md) now uses verified opaque credentials,
+remote PostgreSQL and live R2, destroys the ingest VM, then discovers both agents'
+records and saved responses on a fresh VM before copying writer retry inputs.
+Original receipts survive semantic retries with no object creation. This tests
+ingest-VM replacement with surviving remote stores, not catalog disaster recovery
+or provider-wide durability. Its lost application acknowledgment is distinct from
+the local test's actual COMMIT-response fault.
 An internal ownership-registration coordinator shares its binding contract with
 owner-aware publication and explicit project-reader lookups. Controlled capabilities
 exercise earlier integration tests. `access.Credentials` and `access.Authorizer`
@@ -46,7 +52,8 @@ Use one acceptance scenario to keep implementation steps connected to that outco
 3. Success covers the accepted record's remotely saved bytes and the catalog
    metadata needed to find them. A new authorized reader can find that record
    after acknowledgment, including after replacement of the ingest machine.
-   Tests with surviving local services are intermediate evidence for this goal.
+   The live host-recovery drill exercises this boundary with a surviving remote
+   catalog and R2; catalog loss/restore and failover remain separate obligations.
 4. A reader with project permission can retrieve both agents' accepted records and
    inspect their relationships in one trace. Records and captures may arrive late
    or independently. Show available evidence and unavailable relationships/captures
@@ -56,9 +63,10 @@ Use one acceptance scenario to keep implementation steps connected to that outco
    Missing or redacted capture remains explicit. Running a model or application
    again is a separate operation with its own adapter and comparison contract.
 
-This scenario is a completion target, not a claim that producers, authentication,
-complete trace assembly, an inspection interface or host-loss recovery exist now.
-Internal controlled producers and saved-byte playback exercise parts of it.
+This scenario is a completion target. Public producer integration, managed
+credentials, complete trace assembly and an inspection interface remain open.
+Internal synthetic producers, saved-byte playback and live ingest-VM replacement
+exercise parts of it.
 The precise first-release interface, supported playback workload, operating limits
 and deployment/recovery acceptance tests still need concrete scopes before release.
 
@@ -87,10 +95,11 @@ removed. The capture drill adds Alice's handoff and Bob's separate failed/succes
 tool attempts, shuts down both writers and the controlled tool, then discovers and
 plays back the available response from project/trace alone. Actual capture COMMIT
 reply loss returns uncertainty before the new process finds its original acceptance.
-These process drills leave actual host/catalog recovery open. Separate internal
-authentication tests now verify opaque credentials and current native permissions;
-the drills do not deliver
-the complete acceptance scenario above.
+These local process drills leave machine replacement untested. The separate live
+driver now verifies opaque credentials and current native grants while recovering
+the shared trace and saved results after ingest-VM destruction. Catalog recovery,
+public capture and the complete acceptance scenario remain open; see the
+[observed sequence and limits](HOST-RECOVERY.md#one-run-across-two-hosts).
 
 ### Current capture and saved-result operation
 
@@ -413,13 +422,14 @@ objects. Both stores hold required durable state: listing R2 objects cannot reco
 which objects PostgreSQL accepted. The private `rewind-dev` R2 bucket is
 provisioned; its scoped adapter probe passed creation/retry, conditional
 overwrite rejection, a locally discarded successful upload reply and fresh-client
-reads. No remote PostgreSQL
-catalog is provisioned. Registration tests use disposable local PostgreSQL and
-object fault tests drive the SDK through controlled HTTP peers. The live R2
-probe does not test the record catalog or replacement of the ingest host.
+reads. A dedicated remote PostgreSQL development catalog and R2 now also support
+the [live ingest-host replacement](HOST-RECOVERY.md). Registration tests still use
+disposable local PostgreSQL, and object fault tests drive the SDK through controlled
+HTTP peers. The smaller live R2 probe tests only the object adapter.
 The [object contract](OBJECTS.md) specifies immutable writes and bounded reads. A catalog
-on the sole ingest machine would violate the machine-loss requirement. The first
-storage experiment must include a recoverable metadata placement and recovery test.
+on the sole ingest machine would violate the machine-loss requirement. The live
+drill exercises that remote placement and replacement boundary; catalog
+backup/restore and failover remain untested.
 
 Use native pgx with explicit SQL for the PostgreSQL adapter. The selected
 coordination is pessimistic locking with a shared project gate and an exclusive
@@ -475,7 +485,8 @@ Coordinate development before changing either object adapter's scope, read bound
 integrity, error/retry contract, admission or timeout behavior, and before adding
 range reads, deletion, verification reuse or caching. Recheck readiness as soon as
 native record publication and ingest-host replacement work, rather than waiting
-for replay or a viewer. The [extraction checkpoint](OBJECTS.md#extraction-checkpoint)
+for replay or a viewer. Both now have Rewind evidence. The
+[extraction checkpoint](OBJECTS.md#extraction-checkpoint)
 is the maintained handoff: compare current revisions, concrete sequences, measured
 requests/bytes, differences and unresolved outcomes with Concordance's development
 agent before proposing a shared API. A local note is not a delivered message or
