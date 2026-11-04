@@ -37,8 +37,10 @@ Rewind is a multiplayer trace store and recorded-playback system. Multiple agent
 contribute their own operation records to one shared trace. An authorized reader
 can inspect the agents' work together, follow reported parent and link relationships,
 find available captured inputs and results, and play back saved results for a
-supported workload. This is the intended outcome; the internal components described
-above do not yet deliver that complete experience.
+supported workload. Later, authorized users should be able to find recurring behavior
+across runs and preserve selected evidence as regression-test examples. This is the
+intended outcome; the internal components described above do not yet deliver that
+complete experience.
 
 Use one acceptance scenario to keep implementation steps connected to that outcome:
 
@@ -153,6 +155,39 @@ time. A span that cannot fit an empty page is an explicit limit error; a span
 that only exceeds remaining space is left for continuation. No production limits
 or public token encoding are selected. Revisit fixed membership when a required
 consumer needs reproducible resumable selection rather than refreshed inspection.
+
+### Later investigation and regression-test goals
+
+After the usable capture, inspection and recorded-playback path, support finding
+patterns across runs and preserving selected examples for regression tests. For example,
+find shared Alice/Bob runs containing tool failures, inspect the available inputs
+and results, then preserve examples with enough context to test a future change.
+These are agreed later goals, not implemented features or extra first-release gates.
+
+Search should cover relevant structured fields and supported captured text under
+current project-reader permission. Queries must distinguish conditions on one span
+from conditions satisfied by different spans in a trace. Verified ownership comes
+from the catalog, not descriptive agent labels. Query syntax, indexes and analytical
+freshness remain open; immediate trace-ID lookup after acknowledgment stays required.
+
+A reproducible example needs an explicit selection of accepted record identities
+and verified references, plus the resource versions and application state its
+consumer requires. A live page cursor is not that selection. Preserve missing,
+redacted and truncated evidence explicitly. Examples need
+an export or retention contract that outlives their source records where necessary;
+normal retries still cannot extend expiry. Recorded-byte playback and evaluating a
+new execution remain different operations. Export shape, scoring, state capture and
+retention mechanisms require a concrete consumer design before implementation.
+
+Braintrust's [Trace Lake article](https://www.braintrust.dev/blog/trace-lake) motivates
+searching execution history and turning failures into tests. Its production claims
+are not Rewind measurements or selected operating targets. Grafana Tempo's
+[pinned architecture](https://github.com/grafana/tempo/blob/c1722c24a0ae27a6966b19ee249d18d6c1173e97/docs/sources/tempo/introduction/architecture.md)
+uses object-storage Parquet blocks for trace-ID lookup and cross-trace queries;
+its telemetry workload does not supply Rewind's producer ownership or playback
+contract. These examples inform later workloads, not a new database, SQL engine,
+background investigation service or shared Concordance engine. Select mechanisms
+against actual queries and measured costs in the existing learning stages.
 
 ## Agreed requirements
 
