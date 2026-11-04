@@ -2,9 +2,12 @@
 
 The canonical project outcome is in `engineering/ARCHITECTURE.md#long-term-outcome`:
 multiple agents contribute independently owned records to one shared trace that an
-authorized reader can inspect and use for recorded playback. Use that outcome to
-justify milestones and assess completion. A single-record checkpoint is intermediate
-progress toward it; keep the broader storage-engine learning goals explicit too.
+authorized reader can inspect and use for recorded playback. Later goals include
+cross-run investigation and preserving selected evidence for regression tests;
+finish the usable capture/inspection/playback path before implementing those extensions.
+Use that outcome to justify milestones and assess completion. A single-record
+checkpoint is intermediate progress toward it; keep the broader storage-engine
+learning goals explicit too.
 
 Preserve user changes. Use plain, descriptive branch names without an agent prefix.
 After each confirmed PR merge, delete its upstream and local feature branches and
