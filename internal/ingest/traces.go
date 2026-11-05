@@ -47,6 +47,18 @@ type TraceCursor struct {
 
 func (c TraceCursor) IsZero() bool { return c == (TraceCursor{}) }
 
+// ResumeTrace constructs a validated position, not reader authority or a
+// membership snapshot. Transport encoding belongs to the caller.
+func ResumeTrace(tenant string, trace traceid.Trace, after traceid.Span) (TraceCursor, error) {
+	if !validRegistrationID(tenant) || !trace.Valid() || !after.Valid() {
+		return TraceCursor{}, ErrInvalid
+	}
+	return TraceCursor{tenant: tenant, trace: trace, after: after}, nil
+}
+
+// After is zero for the initial/exhausted position. It conveys no permission.
+func (c TraceCursor) After() traceid.Span { return c.after }
+
 type TraceState uint8
 
 const (

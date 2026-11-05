@@ -8,8 +8,9 @@ coordinator test publishes real SQL rows against a controlled object peer. The
 authentication adapter verifies separate opaque bearer credentials for individual
 principals, with permissions kept authoritative in PostgreSQL. A trusted host
 helper registers actual OpenTelemetry SDK span IDs. Operator grant/credential
-setup is explicit; a public receiver, credential distribution/rotation service and
-authenticated run controller remain unimplemented.
+setup is explicit. The [Rewind service](SERVICE.md) now receives records through
+verified credentials and exposes read-only browser sessions. Credential
+distribution/rotation and authenticated run controls remain unimplemented.
 
 Alice owns call 42. A trusted host registers its tenant/trace/span to Alice's
 run/instance before either record arrives. Bob has writing permission for his own
@@ -313,4 +314,5 @@ opaque credentials and the same native grants with remote PostgreSQL and live
 R2. A replacement VM discovers both owners' records and saved responses after
 the original ingest VM is destroyed; denied-reader probes make no object calls.
 Its trusted operator setup and synthetic principals do not implement credential
-distribution, rotation, public reception or authenticated run controls.
+distribution, rotation, OTLP reception or authenticated run controls. The explicit
+Rewind service uses the same native checks for each protected request.

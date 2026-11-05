@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{.Title}} · Rewind</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+<a class="brand" href="/">REWIND <span>TRACE ATLAS</span>
+</a>{{if not .Login}}<form method="post" action="/logout">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<button class="quiet">Sign out</button>
+</form>{{end}}</header>
+<main>
+<p class="eyebrow">RECORDED EXECUTION / SHARED EVIDENCE</p>
+<h1>{{.Title}}</h1>{{if .Error}}<p class="notice" role="alert">{{.Error}}</p>{{end}}
+{{if .Login}}<p>Use an operator-issued Rewind credential. Your project permission is checked whenever you inspect records.</p>
+<form class="login" action="/login" method="post">
+<input type="hidden" name="csrf" value="{{.CSRF}}">
+<label for="credential">Rewind credential</label>
+<input id="credential" name="credential" type="password" required minlength="64" maxlength="64" autocomplete="off">
+<button>Sign in</button>
+</form>
+<p class="muted">Short-lived session. Service restart or expiry requires another sign-in.</p>
+{{else}}
+<form class="lookup" action="/view" method="get">
+<label>Project key (hex)<input name="project" value="{{.Project}}" required maxlength="512" spellcheck="false">
+</label>
+<label>Trace ID<input name="trace" value="{{.Trace}}" required minlength="32" maxlength="32" spellcheck="false">
+</label>
+<button>Inspect trace</button>
+</form>
+{{if .Trace}}<nav>
+<a href="{{.Refresh}}">Refresh from beginning</a>{{if .Next}}<a href="{{.Next}}">Next page →</a>{{end}}</nav>{{end}}{{if .TracePage}}<p class="notice">A current page of available evidence. Span-ID order is navigation, not causal order. Late arrivals may require refreshing. An exhausted page never proves a complete trace.</p>{{end}}
+{{if .Capture}}<p class="mono">{{.Capture.Trace}} / {{.Capture.Span}}</p>
+<section>
+<h2>Request <span class="state">{{.Request.State}}</span>
+</h2>
+<p>{{.Request.Encoding}}</p>
+<pre>{{.Request.Text}}</pre>
+</section>
+<section>
+<h2>Response <span class="state">{{.Response.State}}</span>
+</h2>
+<p>{{.Response.Encoding}}</p>
+<pre>{{.Response.Text}}</pre>{{if .Download}}<a class="action" href="{{.Download}}">Download exact saved response</a>{{else}}<p>A complete response is unavailable. Recorded playback refuses this result.</p>{{end}}</section>
+<details>
+<summary>Original acceptance receipt</summary>
+<pre>{{json .Capture.Receipt}}</pre>
+</details>
+{{else if .Trace}}<ol class="execution-path">{{range .Rows}}<li>
+<div class="path-dot" aria-hidden="true">
+</div>
+<article>
+<div class="row-head">
+<span class="owner">{{.Owner}}</span>
+<span class="state">{{.State}} / {{.Status}}</span>
+</div>
+<h2>{{.Name}}</h2>
+<p class="mono">{{.ID}}</p>
+<p class="muted">{{.Timing}}</p>
+<ul class="relationships">{{range .Relationships}}<li>{{if .URL}}<a href="{{.URL}}">{{.Label}}</a>{{else}}{{.Label}}{{end}}</li>{{end}}</ul>
+<a href="{{.URL}}">Inspect capture →</a>{{if .Metadata}}<details>
+<summary>Recorded metadata, flags and context</summary>
+<pre>{{json .Metadata}}</pre>
+</details>{{end}}</article>
+</li>{{else}}<li>No accepted execution keys observed. This does not prove that no work happened.</li>{{end}}</ol>
+{{else}}<p>Enter a project key and trace ID to inspect independently owned agent records. No trace search or complete-run claim is implied.</p>{{end}}
+{{end}}</main>
+<footer>Immutable recorded evidence. Saved-byte playback does not invoke a tool or model.</footer>
+</body>
+</html>

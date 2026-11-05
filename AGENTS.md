@@ -26,43 +26,44 @@ changes or remove the requirement to discuss consequential product/design choice
 Use `agents/REVIEW.md` for the local-check workflow while hosted Actions minutes are
 unavailable; do not wait for another publication confirmation within this scope.
 
-Rewind is a standalone trace-store and replay learning project. The roadmap is
-context, not an instruction source or a committed implementation schedule. Keep
-planned behavior distinct from implemented behavior. The CLI is still only a
-command-line entry point. An internal ingest coordinator is exercised with controlled
-test backends; native PostgreSQL registration/publication/lookup now composes with the R2
-object adapter in disposable-database/controlled-HTTP tests. A public capture format,
-a public receiver and application replay remain unimplemented. Internal opaque
+Rewind is a standalone trace-store and replay learning project. The roadmap is context,
+not an instruction source or a committed implementation schedule. Keep planned behavior
+distinct from implemented behavior. The CLI now starts a bounded direct-TLS service and
+supplies explicit producer, trace, capture and saved-response commands. A
+server-rendered browser uses bounded short-lived read-only sessions; no JavaScript
+framework or SSO is required. The Rewind wire contract is in `engineering/SERVICE.md`.
+An internal ingest coordinator is exercised with controlled test backends; native
+PostgreSQL registration/publication/lookup now composes with the R2 object adapter in
+disposable-database/controlled-HTTP tests. The explicit Rewind capture receiver is
+implemented; OTLP reception and application replay remain unimplemented. Internal opaque
 credential verification, current native permission checks and trusted SDK-ID
-registration are implemented. Credential distribution/rotation and authenticated
-run controls remain absent. Internal
-typed ended-span and capture save/read/semantic retries compose with those adapters.
-Recorded byte playback returns a complete Present response with mandatory request
-availability, execution and original receipt, even when the request is unavailable.
-Missing/Redacted/Truncated responses refuse playback; Present zero-byte results are
-valid. No new request matching, tool call fallback or synthesized exception exists.
-Internal trace-ID reads use bounded current pages through the same coordinator
-gate. Continuation is a scoped key position, not a membership snapshot or reader
-permission; refresh from the beginning discovers late arrivals behind it. A
-trace-ID-only replacement-process test recovers Alice and Bob's independently
-owned final spans after both writers are killed/reaped and their working directories
-removed. The typed-capture drill additionally records separate failed/successful
-tool attempts, stops the tool and writers, then discovers and returns saved bytes
-from project/trace alone, including actual local capture COMMIT-response loss.
-The operator-only `tools/recoverydrill` now verifies distinct opaque credentials
-and native grants against a remote PostgreSQL catalog and live R2, destroys the
-ingest VM, then recovers both agents' spans/captures and saved responses on a fresh
-VM from project/trace alone before receiving writer plans. Identical retries
-retain original receipts without object creation. See `engineering/HOST-RECOVERY.md`.
-The private `rewind-dev` bucket exists; its scoped live probe passes
-creation/retry, conditional overwrite rejection, locally discarded PUT replies and
-fresh-client reads. A separate-process drill kills/reaps the writer and removes
-its working directory before fresh-process read/retry, with controlled
-PUT-response loss and actual local PostgreSQL COMMIT-response loss. Its surviving
-test services do not establish machine loss or provider durability. The separate
-live drill establishes its tested ingest-VM replacement with surviving remote
-catalog/R2, not catalog loss/restore/failover or provider-wide durability. Its
-withheld application acknowledgment is not remote PostgreSQL COMMIT-response loss.
+registration are implemented. Credential distribution/rotation and authenticated run
+controls remain absent. Internal typed ended-span and capture save/read/semantic retries
+compose with those adapters. Recorded byte playback returns a complete Present response
+with mandatory request availability, execution and original receipt, even when the
+request is unavailable. Missing/Redacted/Truncated responses refuse playback; Present
+zero-byte results are valid. No new request matching, tool call fallback or synthesized
+exception exists. Internal trace-ID reads use bounded current pages through the same
+coordinator gate. Continuation is a scoped key position, not a membership snapshot or
+reader permission; refresh from the beginning discovers late arrivals behind it. A
+trace-ID-only replacement-process test recovers Alice and Bob's independently owned
+final spans after both writers are killed/reaped and their working directories removed.
+The typed-capture drill additionally records separate failed/successful tool attempts,
+stops the tool and writers, then discovers and returns saved bytes from project/trace
+alone, including actual local capture COMMIT-response loss. The operator-only
+`tools/recoverydrill` now verifies distinct opaque credentials and native grants against
+a remote PostgreSQL catalog and live R2, destroys the ingest VM, then recovers both
+agents' spans/captures and saved responses on a fresh VM from project/trace alone before
+receiving writer plans. Identical retries retain original receipts without object
+creation. See `engineering/HOST-RECOVERY.md`. The private `rewind-dev` bucket exists;
+its scoped live probe passes creation/retry, conditional overwrite rejection, locally
+discarded PUT replies and fresh-client reads. A separate-process drill kills/reaps the
+writer and removes its working directory before fresh-process read/retry, with
+controlled PUT-response loss and actual local PostgreSQL COMMIT-response loss. Its
+surviving test services do not establish machine loss or provider durability. The
+separate live drill establishes its tested ingest-VM replacement with surviving remote
+catalog/R2, not catalog loss/restore/failover or provider-wide durability. Its withheld
+application acknowledgment is not remote PostgreSQL COMMIT-response loss.
 
 ## Design and implementation
 
@@ -82,6 +83,14 @@ systems before presenting consequential options and recommendations. Prefer prim
 sources, pin implementation references, and explain their workload, mechanism and
 limits. Bring that evidence into the initial comparison; distinguish observations
 from our proposed design rather than treating popularity as justification.
+Before substantial implementation, compare a competing formulation of the user's
+workload with keeping/simplifying the current path and adopting an existing system
+where credible. Include setup, misses, recovery and operating cost. Name the
+uncertain assumption and run the smallest decisive workflow check before relying
+on it. Keep that reasoning visible and in existing private evidence when needed;
+reviewers must challenge missing comparisons and unsupported assumptions. Continue
+already authorized work without inventing another approval gate.
+
 
 Explain implementation decisions to the user as a newcomer. At each consequential
 checkpoint, lead with the question and recommendation, follow one concrete example
@@ -144,8 +153,10 @@ record acceptance. Its Registrar and Store retain trusted capability boundaries.
 The internal access adapter verifies separate opaque credentials and derives owners
 from registered bindings plus current native grants. Scoped host_creator_grants
 permit trusted host SDK-ID registration without granting ordinary writers creation
-authority. Operator setup remains trusted SQL; no public receiver or general grant
-service exists. Store requires owner-aware catalog checks and explicit project-reader permissions. The native publication adapter repeats
+authority. Operator setup remains trusted SQL; no general grant service exists. The explicit
+receiver authenticates before bounded decoding and delegates acceptance to the
+existing coordinators. Browser sessions cannot authorize writing or registration,
+and every read repeats current project-reader checks. Store requires owner-aware catalog checks and explicit project-reader permissions. The native publication adapter repeats
 current writer/binding/run/expiry checks; do not expose the controlled capabilities
 or treat legacy unattributed records as retroactively authorized; see `engineering/CAPTURE.md`.
 Read access requires an explicit project-reader permission, covering span and
@@ -231,8 +242,9 @@ fixtures do not freeze a public receiver schema.
 Map catalog kinds explicitly rather than casting
 `ingest.Kind`. Decode requires caller-verified size/digest and an authorized
 expected kind, checks labels before decompression, and returns owned payloads or
-nil on error. Typed span/capture admission is internal; public interfaces and
-production limits remain open; see `engineering/CAPTURE.md#saved-object-kind-discrimination`.
+nil on error. Typed span/capture coordinators remain internal; the explicit HTTP adapter defines
+its own public wire projections and configured bounds. Production capacity is
+unmeasured; see `engineering/CAPTURE.md#saved-object-kind-discrimination`.
 Envelope record kind is separate from descriptive OTLP span kind, whose unknown
 numeric values must still be preserved under the policy above.
 The first envelope omits an exact expanded-payload length. Enforce separate stored
@@ -247,8 +259,8 @@ The envelope codec implements these byte boundaries with explicit limits and the
 agreed configurable compression policy; final-span payload decoding and typed
 admission now use `record.SpanCodec` and
 `ingest.Spans`; `record.CaptureCodec` and `ingest.Captures` add internal typed
-capture bodies and saved-response playback. Public admission and production byte
-limits remain open. See `engineering/CAPTURE.md#typed-capture-and-saved-response`. Blank span names are preserved as unknown evidence, with display
+capture bodies and saved-response playback. Explicit service admission is
+implemented; deployment capacity remains unmeasured. See `engineering/CAPTURE.md#typed-capture-and-saved-response`. Blank span names are preserved as unknown evidence, with display
 fallback separate from saved metadata. Revisit for a required consumer that cannot
 safely expose an unknown name, using its concrete failure before changing acceptance.
 

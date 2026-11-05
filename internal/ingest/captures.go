@@ -76,7 +76,7 @@ func (s *Captures) WriteCapture(ctx context.Context, execution Execution, captur
 	}
 	prepared, stored, err := s.codec.Prepare(capture)
 	if err != nil {
-		return Receipt{}, fmt.Errorf("prepare capture: %w", err)
+		return Receipt{}, fmt.Errorf("prepare capture: %w", preparationError(err))
 	}
 	if !matchesCapture(prepared, execution) {
 		return Receipt{}, ErrInvalid

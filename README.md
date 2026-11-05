@@ -1,31 +1,44 @@
 # Rewind
 
-Rewind is a Go project for recording, storing and replaying AI calls. Its storage
-engine is a learning project: data formats, indexes, recovery and their costs will
-be implemented and measured explicitly.
+Rewind records independently owned agent operations in a shared trace. A reader
+with project permission can inspect spans and captured inputs/results through
+terminal commands or a browser, then retrieve a complete saved response without
+running the tool or model again.
 
-The CLI currently provides help and version output. An internal ingest coordinator
-exercises immutable writes, ownership and read permissions with controlled test
-backends. Internal adapters cover PostgreSQL ownership registration, record
-publication/lookup and immutable R2 objects; a local integration test composes them
-with a controlled object peer. They are not yet a remotely durable service. Real
-authentication, trace queries and replay are not implemented. The design requires
-remote durability before acknowledging accepted data and distinguishes recorded
-playback from running an external model again.
+The storage engine is also a learning project: formats, indexing, recovery and
+their costs are implemented and examined explicitly. The service uses PostgreSQL
+for authoritative acceptance and R2 for immutable objects. Both must survive the
+ingest machine for an acknowledgment to mean remote durability.
 
 ## Getting started
 
-Install Go 1.27 or newer and Git, then run:
+Install Go 1.27 or newer and Git, then build:
 
 ```sh
-go run ./cmd/rewind version
 make check
 make build
+bin/rewind help
 ```
 
-The first command prints `rewind dev`. The build produces `bin/rewind`; it currently
-supports only help and version output. It does not start a server or contact a
-model, database or object store.
+Follow the [service setup](engineering/SERVICE.md#operator-setup-and-first-run) to
+configure TLS, remote stores and separately scoped credentials. Once the service
+is running, inspect one current page:
+
+```sh
+bin/rewind trace --endpoint https://rewind.example.com \
+  --token-file reader.token --project demo --trace TRACE_ID
+```
+
+The browser uses the same service origin and project-reader policy. The
+[two-producer example](engineering/SERVICE.md#two-producer-example) records a
+handoff and separate failed/successful tool attempts, with saved plans for
+same-identity retry.
+
+A trace page is available evidence, not proof of a complete run or causal order.
+Missing, redacted or truncated responses refuse recorded playback. Credential and
+grant provisioning remain operator tasks; there is no OTLP receiver, automatic
+credential rotation or general application re-execution. Building does not
+provision or deploy a service.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor setup and checks, and the
-[architecture direction](engineering/ARCHITECTURE.md) for planned boundaries.
+[architecture](engineering/ARCHITECTURE.md) for implemented and remaining boundaries.
