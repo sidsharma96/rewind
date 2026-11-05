@@ -1,35 +1,37 @@
 # Rewind architecture direction
 
-This describes agreed contracts and implementation boundaries. The CLI provides
-help/version only. The internal ingest coordinator runs against controlled test
-backends. Ownership registration, record publication and known-record lookup have a native-pgx
-PostgreSQL adapter; immutable objects have an AWS SDK v2 R2 adapter. A composed
-PostgreSQL/controlled-HTTP test exercises saving, fresh reads and retries. The internal typed ended-span coordinator now validates, saves and reads known
+This describes agreed contracts and implementation boundaries. The CLI starts a TLS
+service and supplies authenticated producer/reader commands; a server-rendered browser
+uses short-lived read-only sessions. The explicit Rewind HTTP interface is described in
+[the service contract](SERVICE.md). The internal ingest coordinator runs against
+controlled test backends. Ownership registration, record publication and known-record
+lookup have a native-pgx PostgreSQL adapter; immutable objects have an AWS SDK v2 R2
+adapter. A composed PostgreSQL/controlled-HTTP test exercises saving, fresh reads and
+retries. The internal typed ended-span coordinator now validates, saves and reads known
 span records, including equivalent differently encoded retries. An internal bounded
-trace reader now discovers final spans from project and trace ID alone. Internal
-typed captures save exact request/response bytes with explicit availability, and
-authorized recorded-byte playback returns complete saved responses. A public
-capture format and application replay runtime remain unimplemented. Internal opaque
-bearer verification, native permission checks and a trusted SDK-ID registration
-helper now compose with the typed record path; there is no public receiver.
-Its separate-process drill also kills/reaps a writer and removes its working
-directory before recovering accepted records through new clients. Controlled
-HTTP PUT-response loss and actual local PostgreSQL COMMIT-response loss are
-exercised. These local process tests leave their storage services alive. A separate
-[live host-recovery driver](HOST-RECOVERY.md) now uses verified opaque credentials,
-remote PostgreSQL and live R2, destroys the ingest VM, then discovers both agents'
-records and saved responses on a fresh VM before copying writer retry inputs.
-Original receipts survive semantic retries with no object creation. This tests
-ingest-VM replacement with surviving remote stores, not catalog disaster recovery
-or provider-wide durability. Its lost application acknowledgment is distinct from
-the local test's actual COMMIT-response fault.
-An internal ownership-registration coordinator shares its binding contract with
-owner-aware publication and explicit project-reader lookups. Controlled capabilities
-exercise earlier integration tests. `access.Credentials` and `access.Authorizer`
-now verify distinct principals and current native grants; `producer.Host` registers
-actual SDK IDs under separately granted host creation scope. Trusted setup still
-installs grants and credential snapshots; distribution, rotation and authenticated
-run controls remain unimplemented.
+trace reader now discovers final spans from project and trace ID alone. Internal typed
+captures save exact request/response bytes with explicit availability, and authorized
+recorded-byte playback returns complete saved responses. The explicit Rewind capture API
+is implemented; OTLP reception and an application replay runtime remain unimplemented.
+Internal opaque bearer verification, native permission checks and a trusted SDK-ID
+registration helper now compose with the typed record path and explicit Rewind receiver.
+Its separate-process drill also kills/reaps a writer and removes its working directory
+before recovering accepted records through new clients. Controlled HTTP PUT-response
+loss and actual local PostgreSQL COMMIT-response loss are exercised. These local process
+tests leave their storage services alive. A separate [live host-recovery
+driver](HOST-RECOVERY.md) now uses verified opaque credentials, remote PostgreSQL and
+live R2, destroys the ingest VM, then discovers both agents' records and saved responses
+on a fresh VM before copying writer retry inputs. Original receipts survive semantic
+retries with no object creation. This tests ingest-VM replacement with surviving remote
+stores, not catalog disaster recovery or provider-wide durability. Its lost application
+acknowledgment is distinct from the local test's actual COMMIT-response fault. An
+internal ownership-registration coordinator shares its binding contract with owner-aware
+publication and explicit project-reader lookups. Controlled capabilities exercise
+earlier integration tests. `access.Credentials` and `access.Authorizer` now verify
+distinct principals and current native grants; `producer.Host` registers actual SDK IDs
+under separately granted host creation scope. Trusted setup still installs grants and
+credential snapshots; distribution, rotation and authenticated run controls remain
+unimplemented.
 
 ## Long-term outcome
 
@@ -65,12 +67,13 @@ Use one acceptance scenario to keep implementation steps connected to that outco
    Missing or redacted capture remains explicit. Running a model or application
    again is a separate operation with its own adapter and comparison contract.
 
-This scenario is a completion target. Public producer integration, managed
-credentials, complete trace assembly and an inspection interface remain open.
-Internal synthetic producers, saved-byte playback and live ingest-VM replacement
-exercise parts of it.
-The precise first-release interface, supported playback workload, operating limits
-and deployment/recovery acceptance tests still need concrete scopes before release.
+This scenario is a completion target. The explicit service, SDK-ID sample producers,
+CLI and browser now expose the capture/inspection/saved-byte path. Native tests
+exercise separate producer and reader processes through TLS, lost replies and
+permission changes. The [service contract](SERVICE.md) defines the version-one wire
+format and short-lived browser sessions. Managed credentials, arbitrary producer
+integrations, complete trace assembly, production capacity and deployment/recovery
+release acceptance remain open.
 
 The learning outcome remains part of the project: implement and explain storage
 formats, buffering and indexing choices, compaction, recovery and query algorithms
@@ -100,7 +103,7 @@ reply loss returns uncertainty before the new process finds its original accepta
 These local process drills leave machine replacement untested. The separate live
 driver now verifies opaque credentials and current native grants while recovering
 the shared trace and saved results after ingest-VM destruction. Catalog recovery,
-public capture and the complete acceptance scenario remain open; see the
+general producer integration and the complete release acceptance scenario remain open; see the
 [observed sequence and limits](HOST-RECOVERY.md#one-run-across-two-hosts).
 
 ### Current capture and saved-result operation
@@ -121,8 +124,8 @@ response with mandatory request availability, execution and original receipt. An
 unavailable request does not block that response; an unavailable response returns
 `ErrResultUnavailable`. No incoming request matching, live tool fallback or fabricated
 exception is part of this operation. Trace pages discover execution IDs but do not
-freeze a resumable playback membership set. Public admission, production limits and
-application-specific replay consumers remain open.
+freeze a resumable playback membership set. The explicit service projects these operations without adding request matching.
+Production capacity and application-specific replay consumers remain open.
 
 ### Current trace-read pages
 
@@ -152,8 +155,8 @@ physical database work: planner choices, dead rows and lock waits still matter.
 Sequential GETs cap call count and stored bytes; per-span codec limits multiplied
 by the candidate cap bound expansion/graph work, not exact heap use or hard CPU
 time. A span that cannot fit an empty page is an explicit limit error; a span
-that only exceeds remaining space is left for continuation. No production limits
-or public token encoding are selected. Revisit fixed membership when a required
+that only exceeds remaining space is left for continuation. Production capacity is unmeasured; the explicit service supplies configured bounds
+and a scoped public position encoding. Revisit fixed membership when a required
 consumer needs reproducible resumable selection rather than refreshed inspection.
 
 ### Later investigation and regression-test goals
@@ -276,9 +279,9 @@ insensitive; PostgreSQL keeps raw bytes. Other identifiers remain opaque bounded
 strings. These keys do not authenticate a producer or validate metadata contents.
 Compare defined metadata fields by their typed values, independently of outer
 transport JSON field order or spacing. Compare captured request and response bytes
-exactly; do not silently rewrite them. The concrete field schema, public identity encoding,
-deterministic record encoding, correction mechanism and duplicate response shape
-still need design. These are agreed contracts, not implemented behavior.
+exactly; do not silently rewrite them. The explicit service defines its wire fields, identity and duplicate-response
+encoding separately from the internal saved representation. A correction mechanism
+and future record versions still need design.
 
 Keep one stored-object digest in the catalog. For an authorized same-identity
 retry whose stored bytes differ, the selected direction is to verify and decode
@@ -317,7 +320,7 @@ consumer cannot safely expose an unknown category, using its concrete failure ca
 before changing acceptance. The [numeric-value contract](CAPTURE.md#numeric-kind-and-status-values)
 records that integration checkpoint. Lab round-trip, refusal and property tests
 cover representation; the typed span coordinator now applies these rules in
-preparation and retry comparison. Display/replay consumers remain unimplemented.
+preparation and retry comparison. The browser exposes explicit unknown categories; arbitrary replay consumers remain open.
 Received span and link flags retain all 32 bits, including unfamiliar bits; each
 full unsigned value remains retry content. Future consumers interpret documented
 bits through masks without replacing the saved value or inferring authority.
@@ -352,12 +355,10 @@ The internal `record.TargetOfLink` helper copies a key only for two nonzero IDs,
 and refuses wrong nonempty widths. A usable key grants no authority or guarantee
 of existence; the containing span's own IDs stay strict. The
 [link contract](CAPTURE.md#links-without-usable-targets) covers preservation, retry
-distinctions and the consumer integration checkpoint. Typed span preparation/decoding preserves these targets; viewer navigation and
-replay integration remain unimplemented.
+distinctions and the consumer integration checkpoint. Typed span preparation/decoding preserves these targets; browser navigation preserves unavailable targets; application replay integration remains open.
 The internal saved final-span schema is bounded one-span metadata JSON under the
 version-1 envelope. Internal capture bodies now have their separate payload schema;
-public admission and future-version
-compatibility remain open. Blank operation names remain unknown evidence; never
+explicit service admission is implemented; future-version compatibility remains open. Blank operation names remain unknown evidence; never
 insert a saved placeholder. A changed name is changed retry content. Revisit for
 a required consumer unable to safely expose an unknown name and show its concrete
 failure before changing acceptance.
@@ -394,7 +395,8 @@ setting, favoring lower compression CPU and allocation over the extra size savin
 DefaultCompression. The metadata codec includes owned attribute ordering, but
 the envelope codec now exposes explicit byte bounds and compression policy.
 Internal typed final-span admission and logical retry resolution are implemented.
-The internal capture schema is implemented; public interfaces and production limits remain open.
+The capture schema and explicit service admission are implemented; production
+capacity remains unmeasured.
 
 Keep captured bytes distinct from tracing metadata. A span can lack the inputs
 needed for replay; missing capture must not be represented as an empty request or
@@ -418,7 +420,7 @@ uncommitted observation gives no protection. Save receipts now carry original ca
 ExpiresAt instants. The coordinator validates their ordering and returns them
 unchanged on retries; controlled tests keep both with the original reference and
 attribution. Native publication chooses those times from project policy once,
-and SQL Lookup reads the same saved receipts. A public receipt encoding remains unimplemented. Rewind must enforce authenticated producer/execution ownership in
+and SQL Lookup reads the same saved receipts. The service encodes original receipts explicitly; see [the wire contract](SERVICE.md#version-one-wire-contract). Rewind must enforce authenticated producer/execution ownership in
 the first working version, with writing authority scoped to one agent instance
 in one run in one project, as described in [the capture design](CAPTURE.md#producer-authority).
 Trusted catalog registration is the selected ownership binding. The local Registrar

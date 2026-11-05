@@ -92,7 +92,7 @@ func (s *Spans) WriteSpan(ctx context.Context, execution Execution, ended record
 	}
 	prepared, stored, err := s.codec.Prepare(ended)
 	if err != nil {
-		return Receipt{}, fmt.Errorf("prepare ended span: %w", err)
+		return Receipt{}, fmt.Errorf("prepare ended span: %w", preparationError(err))
 	}
 	if !matchesExecution(prepared, execution) {
 		return Receipt{}, ErrInvalid
@@ -224,4 +224,13 @@ func matchesExecution(span record.Span, e Execution) bool {
 func validOriginal(r Receipt, id Identity, writer Attribution) bool {
 	return validReceiptTimes(r) && r.Reference.Identity == id && r.Reference.Size >= 0 &&
 		validAttribution(r.Attribution) && r.Attribution.Owner == writer.Owner
+}
+
+// preparationError classifies only local preparation before object I/O. Errors
+// decoding an accepted object deliberately never acquire this input-refusal tag.
+func preparationError(err error) error {
+	if errors.Is(err, record.ErrEnvelopeTooLarge) {
+		return errors.Join(ErrTooLarge, err)
+	}
+	return errors.Join(ErrInvalid, err)
 }

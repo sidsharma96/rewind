@@ -18,7 +18,7 @@ type Permissions interface {
 
 // Authorizer joins verified credential context to current catalog permissions.
 // It has no identity injection method, policy cache, worker or credential store.
-// Credentials.Authenticate is the only constructor of its private identity context.
+// Credentials and Sessions alone construct its private identity contexts.
 type Authorizer struct{ permissions Permissions }
 
 var _ ingest.Authorizer = (*Authorizer)(nil)
@@ -53,6 +53,9 @@ func (a *Authorizer) AuthorizeWrite(ctx context.Context, execution ingest.Execut
 	if err != nil {
 		return ingest.Attribution{}, err
 	}
+	if identity, ok := ctx.Value(credentialKey{}).(authenticatedPrincipal); !ok || identity.readOnly {
+		return ingest.Attribution{}, ingest.ErrDenied
+	}
 	writer, err := a.permissions.WriterFor(ctx, execution, p)
 	if err != nil {
 		return ingest.Attribution{}, err
@@ -78,6 +81,9 @@ func (a *Authorizer) AuthorizeRegistration(ctx context.Context, execution ingest
 	p, err := verifiedPrincipal(ctx)
 	if err != nil {
 		return "", err
+	}
+	if identity, ok := ctx.Value(credentialKey{}).(authenticatedPrincipal); !ok || identity.readOnly {
+		return "", ingest.ErrDenied
 	}
 	if err := a.permissions.CheckCreator(ctx, execution, owner, p); err != nil {
 		return "", err

@@ -6,7 +6,7 @@ check: fmt-check
 	go run ./tools/checkrepo
 
 fmt-check:
-	@test -z "$$(gofmt -l cmd internal tools)" || { gofmt -l cmd internal tools; exit 1; }
+	@test -z "$$(gofmt -l cmd internal tools examples)" || { gofmt -l cmd internal tools examples; exit 1; }
 
 test:
 	go test ./...

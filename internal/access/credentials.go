@@ -70,6 +70,7 @@ func NewToken() (token string, digest [sha256.Size]byte, err error) {
 type credentialKey struct{}
 
 type authenticatedPrincipal struct {
+	readOnly  bool
 	name      string
 	expiresAt time.Time
 	now       func() time.Time

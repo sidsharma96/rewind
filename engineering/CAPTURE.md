@@ -1,10 +1,10 @@
 # Capture direction and OpenTelemetry boundary
 
 Status: the user selected a small explicit Rewind capture path first, with an
-OpenTelemetry-compatible internal record and a later OTLP adapter. No public capture
-schema or receiver is implemented. Internal typed ended-span admission and its
+OpenTelemetry-compatible internal record and a later OTLP adapter. The explicit [Rewind service](SERVICE.md) supplies capture/ended-span reception;
+OTLP reception is not implemented. Internal typed ended-span admission and its
 version-1 saved payload are implemented. Internal typed captures and saved-byte
-playback are also implemented; public receiver schemas remain open. The selected
+playback are also implemented; the explicit Rewind wire schema is separate from OTLP reception. The selected
 span-metadata model reuses OpenTelemetry's generated Go types, including resource,
 scope and typed attributes. Rewind owns validation, normalization, exact capture
 bodies, ownership and the saved format. The narrow JSON adapter below is selected;
@@ -244,9 +244,9 @@ The version selects the whole saved-format revision, including the prefix and
 kind-specific payload schemas together. A future incompatible change to either
 requires an explicit supported-version decision. EnvelopeCodec frames bytes without
 parsing their payload; SpanCodec now supplies the internal version-1 span schema.
-Earlier synthetic composed-test payloads do not freeze a public format. Production byte
-limits and public capture admission remain open; CaptureCodec supplies the internal
-version-1 capture schema. Span and capture remain independent
+Earlier synthetic composed-test payloads do not freeze a public format. The explicit [service](SERVICE.md) defines HTTP admission and configured limits;
+production capacity is unmeasured. CaptureCodec supplies the internal version-1
+capture schema. Span and capture remain independent
 records. Future lifecycle events need their separate identities and contracts;
 reserving the ability to distinguish them does not implement or accept them.
 No accepted object is rewritten. SpanCodec and ingest.Spans now implement typed
@@ -733,7 +733,9 @@ is different from OTLP JSON reception, whose standard requires ignoring unknown
 transport fields. A future adapter must document that projection and cannot claim
 the JSON saved record preserves every original transport field. A public OTLP adapter is absent; internal typed final-span acceptance now uses
 these strict saved-metadata rules. The encoder returns `record.ErrMetadataUnsupported`
-for visited unknown wire metadata; public error mapping remains unselected.
+for visited unknown wire metadata. The explicit Rewind service maps input
+validation separately from accepted-evidence decode failures; OTLP error mapping
+remains separate.
 `otlp_unknown_test.go` checks 25 message positions, direct injection and a real
 binary-protobuf parse, default JSON refusal and unchanged input. The raw ProtoJSON
 loss check remains the simple negative oracle; it is not a permitted save path.
@@ -1393,8 +1395,9 @@ The same adapter now implements owner-aware CheckWrite and Publish, reads record
 under exact project-reader grants and saves expiry when needed. The composed local
 test joins that catalog to Store and the object SDK. Internal credential
 verification and native permission checks now also compose with typed saving and
-reading; public reception, remote catalog deployment and combined host-loss
-recovery remain absent. Do not
+reading and the explicit Rewind receiver. The separate live
+[host-recovery drill](HOST-RECOVERY.md) uses a surviving remote catalog and R2;
+it does not establish catalog loss/restore or provider-wide durability. Do not
 substitute an unrelated binding store and treat it as enforced record acceptance.
 Its installer requires a new owned schema; it migrates no legacy dataset.
 
@@ -1406,8 +1409,9 @@ registers an actual SDK SpanContext for its configured project/run/instance; it
 exports no metadata. Separate `host_creator_grants` give that trusted host creation
 authority without changing exact-call creator grants or implying writer/read
 permission. Registration repeats the current scope check under its project gate.
-`access.Credentials` verifies opaque per-principal tokens; public reception,
-credential distribution/rotation and a collector forwarding protocol remain open. A shared collector must
+`access.Credentials` verifies opaque per-principal tokens for the explicit
+Rewind receiver. OTLP reception, credential distribution/rotation and a collector
+forwarding protocol remain open. A shared collector must
 preserve verified attribution rather than trust arbitrary agent labels; its own
 credential authenticates only that collector. Standard exporter headers identify
 the submitting credential but do not establish the execution-to-owner binding.
