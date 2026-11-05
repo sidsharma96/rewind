@@ -397,6 +397,56 @@ Download response attachments carry `Rewind-Request-State`,
 `Rewind-Response-State` and a Base64url-encoded JSON `Rewind-Receipt` header.
 The receipt digest covers the stored envelope, not the downloaded body alone.
 
+### Capturing a Concordance search
+
+The same trusted application host can run the existing Concordance search CLI.
+It needs an operator-selected regular executable, the existing Concordance
+PostgreSQL service/password files and scoped R2 configuration. Those source-store
+credentials stay in the host environment; they are not saved in the capture or
+given to the fresh Rewind reader. This example is not an untrusted command service.
+
+After Alice's handoff, use Bob's separate writer credential:
+
+```sh
+bin/shared-trace --role bob-search --endpoint https://rewind.example.com:8443 \
+  --host-token-file host.token --token-file bob.token \
+  --trace TRACE_ID --parent ALICE_SPAN_ID --plan-file search.plan \
+  --concordance-bin /absolute/path/to/concordance \
+  --search-target kubernetes --search-edition 1.36 \
+  --search-query ContainerRestartRules
+```
+
+The host permits only `search` with the supplied target, exact edition and query.
+It fixes the result limit at five, the CLI timeout at ten seconds and its display
+limit at 64 KiB. The surrounding process has a fifteen-second deadline and
+independent 64 KiB stdout/stderr caps. These are example bounds, not measured
+production capacity. There is no shell, arbitrary argument list or reranking mode.
+Only the known Concordance connection variables and unchanged PATH/HOME are passed
+to the child. This mode requires Unix; its own process group has no controlling
+terminal, and cancellation stops that group. A process group is not a sandbox for
+hostile code or a guarantee about descendants that deliberately escape it.
+
+The capture request records the arguments without environment values. Its opaque
+response is an example-specific JSON observation with version, outcome, nullable
+exit code, signal, and stdout/stderr byte fields. JSON encodes those byte fields
+as Base64, preserving non-text bytes. This is not a Concordance result or citation
+protocol. A complete nonzero exit is a Present response and a failed span; an
+empty stream does not become Missing. Failure to start saves no invented response.
+Output overflow, cancellation or incomplete stream draining retains bounded partial
+evidence as Truncated, which saved-response playback refuses.
+
+The private plan is saved before delivery. After the search process exits, stop
+the producers and use the ordinary trace/capture/playback commands. An uncertain
+delivery uses `--role retry` with `search.plan`; it never opens the search executable
+or runs another query. A crash before the plan is saved can still lose this local
+observation. Rewind's remote durability promise begins at confirmed acceptance.
+
+This operation preserves what the CLI returned. Its named target can later select
+another generation, and the current CLI cannot directly reopen an old generation.
+Printed source labels and saved arguments therefore support inspection, not a
+complete reproducible task checkpoint. Exact source selection, code/config context
+and retention remain a separate consumer contract.
+
 The CLI accepts project/run/instance names as literal strings; `--project-hex`
 supports opaque project bytes. The HTTP API uses hexadecimal opaque IDs directly.
 Client commands cap request/response documents at 16 MiB and do not auto-retry.
