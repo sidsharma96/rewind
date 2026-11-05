@@ -42,7 +42,11 @@ find available captured inputs and results, and play back saved results for a
 supported workload. Later, authorized users should be able to find recurring behavior
 across runs and preserve selected evidence as regression-test examples. This is the
 intended outcome; the internal components described above do not yet deliver that
-complete experience.
+complete experience. The selected direction is to continue Rewind with a real
+agent workflow guiding this work. Here, a task checkpoint means preserving the
+evidence and context needed to inspect or reproduce a selected task. Continuing
+an interrupted agent is a separate possible capability, rather than the current
+meaning of checkpoint.
 
 Use one acceptance scenario to keep implementation steps connected to that outcome:
 
@@ -173,14 +177,17 @@ from conditions satisfied by different spans in a trace. Verified ownership come
 from the catalog, not descriptive agent labels. Query syntax, indexes and analytical
 freshness remain open; immediate trace-ID lookup after acknowledgment stays required.
 
-A reproducible example needs an explicit selection of accepted record identities
-and verified references, plus the resource versions and application state its
-consumer requires. A live page cursor is not that selection. Preserve missing,
-redacted and truncated evidence explicitly. Examples need
-an export or retention contract that outlives their source records where necessary;
-normal retries still cannot extend expiry. Recorded-byte playback and evaluating a
-new execution remain different operations. Export shape, scoring, state capture and
-retention mechanisms require a concrete consumer design before implementation.
+A task checkpoint needs an explicit selection of accepted record identities and
+verified references, the task's request, and the resource versions and application
+state needed by its consumer. A live page cursor is not that selection. Preserve
+missing, redacted and truncated evidence explicitly, and distinguish a saved result
+from enough context to run the task again. A retained example needs an export or
+retention contract that outlives its source records where necessary; normal retries
+still cannot extend expiry. Current reader permission continues to govern access.
+Recorded-byte playback and evaluating a new execution remain different operations.
+The saved format, selection, scoring, state capture and retention mechanisms require
+a concrete consumer design before implementation. Neither a saved example nor
+re-execution promises the same output from an external model or tool.
 
 Braintrust's [Trace Lake article](https://www.braintrust.dev/blog/trace-lake) motivates
 searching execution history and turning failures into tests. Its production claims

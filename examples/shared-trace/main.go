@@ -87,7 +87,7 @@ func save(path string, plans []plan) error {
 	return nil
 }
 func run(ctx context.Context) error {
-	role := flag.String("role", "", "alice, bob, retry or tool")
+	role := flag.String("role", "", "alice, bob, bob-search, retry or tool")
 	endpoint := flag.String("endpoint", "", "Rewind HTTPS origin")
 	writerFile := flag.String("token-file", "", "private producer credential")
 	hostFile := flag.String("host-token-file", "", "private trusted host creator credential")
@@ -98,15 +98,22 @@ func run(ctx context.Context) error {
 	parentText := flag.String("parent", "", "Alice's span ID for Bob")
 	planFile := flag.String("plan-file", "", "new saved plan; existing plan for retry")
 	toolAddress := flag.String("tool", "127.0.0.1:8088", "controlled loopback tool address")
+	searchBinary := flag.String("concordance-bin", "", "absolute trusted Concordance executable for bob-search")
+	searchTarget := flag.String("search-target", "", "Concordance search target")
+	searchEdition := flag.String("search-edition", "", "exact Concordance edition")
+	searchQuery := flag.String("search-query", "", "Concordance query")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return errors.New("unexpected arguments")
 	}
+	if *role != "bob-search" && *role != "retry" && (*searchBinary != "" || *searchTarget != "" || *searchEdition != "" || *searchQuery != "") {
+		return errors.New("Concordance flags require role bob-search")
+	}
 	if *role == "tool" {
 		return tool(ctx, *toolAddress)
 	}
-	if *role != "alice" && *role != "bob" && *role != "retry" {
-		return errors.New("choose alice, bob, retry or tool")
+	if *role != "alice" && *role != "bob" && *role != "bob-search" && *role != "retry" {
+		return errors.New("choose alice, bob, bob-search, retry or tool")
 	}
 	tc := &tls.Config{MinVersion: tls.VersionTLS12}
 	if *caFile != "" {
@@ -161,7 +168,11 @@ func run(ctx context.Context) error {
 			return errors.New("plan path unavailable")
 		}
 		var err error
-		plans, err = prepare(ctx, *role, *project, *run, *traceText, *parentText, *toolAddress)
+		if *role == "bob-search" {
+			plans, err = prepareSearch(ctx, searchInput{Binary: *searchBinary, Target: *searchTarget, Edition: *searchEdition, Query: *searchQuery}, *project, *run, *traceText, *parentText)
+		} else {
+			plans, err = prepare(ctx, *role, *project, *run, *traceText, *parentText, *toolAddress)
+		}
 		if err != nil {
 			return err
 		}
@@ -175,7 +186,7 @@ func run(ctx context.Context) error {
 		}
 
 		var span, capture httpapi.Receipt
-		if i%2 == 0 {
+		if i%2 == 0 && *role != "bob-search" {
 			capture, err = writer.SaveCapture(ctx, p.Execution, p.Capture)
 			if err == nil {
 				span, err = writer.SaveSpan(ctx, p.Execution, p.Span)
