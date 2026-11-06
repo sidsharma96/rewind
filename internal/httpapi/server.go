@@ -74,7 +74,9 @@ func securityHeaders(w http.ResponseWriter) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Referrer-Policy", "no-referrer")
+	// no-referrer makes a native form POST send Origin:null, which our origin
+	// check must reject. same-origin retains it only for our own origin.
+	w.Header().Set("Referrer-Policy", "same-origin")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'")
 }
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
