@@ -87,7 +87,7 @@ func save(path string, plans []plan) error {
 	return nil
 }
 func run(ctx context.Context) error {
-	role := flag.String("role", "", "alice, bob, bob-search, retry or tool")
+	role := flag.String("role", "", "alice, bob, bob-search, retry, task, task-retry or tool")
 	endpoint := flag.String("endpoint", "", "Rewind HTTPS origin")
 	writerFile := flag.String("token-file", "", "private producer credential")
 	hostFile := flag.String("host-token-file", "", "private trusted host creator credential")
@@ -102,9 +102,28 @@ func run(ctx context.Context) error {
 	searchTarget := flag.String("search-target", "", "Concordance search target")
 	searchEdition := flag.String("search-edition", "", "exact Concordance edition")
 	searchQuery := flag.String("search-query", "", "Concordance query")
+	task := taskOptions{}
+	flag.StringVar(&task.Directory, "task-dir", "", "new private directory; saved directory for task-retry")
+	flag.StringVar(&task.InputFile, "task-file", "", "private UTF-8 question file")
+	flag.StringVar(&task.ModelBinary, "claude-bin", "", "absolute trusted Claude Code executable")
+	flag.StringVar(&task.Model, "model", "", "explicit model name; no fallback")
+	flag.StringVar(&task.AliceToken, "alice-token-file", "", "private Alice writer credential")
+	flag.StringVar(&task.BobToken, "bob-token-file", "", "private Bob writer credential")
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return errors.New("unexpected arguments")
+	}
+	if *role == "task" || *role == "task-retry" {
+		task.Project, task.Run = *project, *run
+		task.Search = searchInput{Binary: *searchBinary, Target: *searchTarget, Edition: *searchEdition}
+		task.Endpoint, task.CAFile, task.HostToken = *endpoint, *caFile, *hostFile
+		if *writerFile != "" || *planFile != "" || *traceText != "" || *parentText != "" || *searchQuery != "" {
+			return errors.New("task roles choose their own identities and query; use task-specific flags")
+		}
+		return taskCommand(ctx, task, *role == "task-retry")
+	}
+	if task != (taskOptions{}) {
+		return errors.New("task flags require role task or task-retry")
 	}
 	if *role != "bob-search" && *role != "retry" && (*searchBinary != "" || *searchTarget != "" || *searchEdition != "" || *searchQuery != "") {
 		return errors.New("Concordance flags require role bob-search")
@@ -115,35 +134,11 @@ func run(ctx context.Context) error {
 	if *role != "alice" && *role != "bob" && *role != "bob-search" && *role != "retry" {
 		return errors.New("choose alice, bob, bob-search, retry or tool")
 	}
-	tc := &tls.Config{MinVersion: tls.VersionTLS12}
-	if *caFile != "" {
-		info, err := os.Stat(*caFile)
-		if err != nil || info.Size() > 1<<20 {
-			return errors.New("invalid CA file")
-		}
-		b, err := os.ReadFile(*caFile)
-		if err != nil {
-			return errors.New("CA unavailable")
-		}
-		roots := x509.NewCertPool()
-		if !roots.AppendCertsFromPEM(b) {
-			return errors.New("invalid CA")
-		}
-		tc.RootCAs = roots
+	client, cleanup, err := exampleClients(*endpoint, *caFile)
+	if err != nil {
+		return err
 	}
-	transport := &http.Transport{DisableCompression: true, TLSClientConfig: tc, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
-		MaxResponseHeaderBytes: 16 << 10, MaxConnsPerHost: 2, IdleConnTimeout: 20 * time.Second}
-	defer transport.CloseIdleConnections()
-	client := func(path string) (*httpapi.Client, error) {
-		token, err := private(path, 65)
-		if err != nil {
-			return nil, err
-		}
-		if len(token) == 65 && token[64] == '\n' {
-			token = token[:64]
-		}
-		return httpapi.NewClient(*endpoint, string(token), &http.Client{Transport: transport, Timeout: 20 * time.Second}, 1<<20, 1<<20)
-	}
+	defer cleanup()
 	host, err := client(*hostFile)
 	if err != nil {
 		return err
@@ -361,4 +356,36 @@ func tool(ctx context.Context, address string) error {
 		<-done
 		return err
 	}
+}
+
+func exampleClients(endpoint, caFile string) (func(string) (*httpapi.Client, error), func(), error) {
+	tc := &tls.Config{MinVersion: tls.VersionTLS12}
+	if caFile != "" {
+		info, err := os.Stat(caFile)
+		if err != nil || info.Size() > 1<<20 {
+			return nil, nil, errors.New("invalid CA file")
+		}
+		b, err := os.ReadFile(caFile)
+		if err != nil {
+			return nil, nil, errors.New("CA unavailable")
+		}
+		roots := x509.NewCertPool()
+		if !roots.AppendCertsFromPEM(b) {
+			return nil, nil, errors.New("invalid CA")
+		}
+		tc.RootCAs = roots
+	}
+	transport := &http.Transport{DisableCompression: true, TLSClientConfig: tc, TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 10 * time.Second,
+		MaxResponseHeaderBytes: 16 << 10, MaxConnsPerHost: 2, IdleConnTimeout: 20 * time.Second}
+	client := func(path string) (*httpapi.Client, error) {
+		token, err := private(path, 65)
+		if err != nil {
+			return nil, err
+		}
+		if len(token) == 65 && token[64] == '\n' {
+			token = token[:64]
+		}
+		return httpapi.NewClient(endpoint, string(token), &http.Client{Transport: transport, Timeout: 20 * time.Second}, 1<<20, 1<<20)
+	}
+	return client, transport.CloseIdleConnections, nil
 }

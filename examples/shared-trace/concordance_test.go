@@ -30,7 +30,7 @@ func searchFixture(t *testing.T) string {
 func TestConcordanceCommandObservation(t *testing.T) {
 	t.Parallel()
 	binary := searchFixture(t)
-	for _, query := range []string{"success", "failure", "empty", "overflow", "wait", "drain"} {
+	for _, query := range []string{"success", "failure", "empty", "overflow", "wait", "drain", "drain-failure"} {
 		t.Run(query, func(t *testing.T) {
 			t.Parallel()
 			in := searchInput{Binary: binary, Target: "fixture", Edition: "1.36", Query: query}
@@ -67,8 +67,12 @@ func TestConcordanceCommandObservation(t *testing.T) {
 				if result.Outcome != "interrupted" || result.ExitCode != nil || result.Signal == "" {
 					t.Fatal("deadline fabricated an ordinary exit")
 				}
-			case "drain":
-				if result.Outcome != "incomplete_streams" || result.ExitCode == nil || *result.ExitCode != 0 {
+			case "drain", "drain-failure":
+				wantExit := 0
+				if query == "drain-failure" {
+					wantExit = 17
+				}
+				if result.Outcome != "incomplete_streams" || result.ExitCode == nil || *result.ExitCode != wantExit {
 					t.Fatal("child-held pipe was reported complete")
 				}
 				// The child wrote its PID before holding the inherited stream.
@@ -99,14 +103,14 @@ func TestConcordanceCommandObservation(t *testing.T) {
 func TestSearchCaptureStates(t *testing.T) {
 	t.Parallel()
 	binary := searchFixture(t)
-	for _, query := range []string{"success", "failure", "empty", "overflow"} {
+	for _, query := range []string{"success", "failure", "empty", "overflow", "drain-failure"} {
 		plans, err := prepareSearch(t.Context(), searchInput{binary, "fixture", "1.36", query}, "demo", "run", "01000000000000000000000000000000", "0200000000000000")
 		if err != nil || len(plans) != 1 {
 			t.Fatalf("prepare command observation: %v", err)
 		}
 		p := plans[0]
 		want := record.BodyPresent
-		if query == "overflow" {
+		if query == "overflow" || query == "drain-failure" {
 			want = record.BodyTruncated
 		}
 		if *p.Capture.Response.State != want || p.Owner.Instance != "626f62" || p.Execution.Trace != "01000000000000000000000000000000" {

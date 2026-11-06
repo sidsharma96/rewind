@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -42,12 +44,8 @@ type searchResult struct {
 }
 
 func (in searchInput) args() ([]string, error) {
-	if !filepath.IsAbs(in.Binary) || len(in.Binary) > 4096 {
-		return nil, errors.New("provide an absolute trusted Concordance executable")
-	}
-	info, err := os.Lstat(in.Binary)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
-		return nil, errors.New("Concordance executable must be a regular executable file")
+	if err := trustedExecutable(in.Binary); err != nil {
+		return nil, err
 	}
 	for i, s := range []string{in.Target, in.Edition, in.Query} {
 		limit := 256
@@ -76,6 +74,7 @@ func searchEnvironment() []string {
 type searchStream struct {
 	data     []byte
 	overflow bool
+	complete bool
 	cancel   context.CancelFunc
 }
 
@@ -89,11 +88,28 @@ func (w *searchStream) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// ReadFrom observes the copy's actual EOF, including when Cmd.Wait prefers an
+// ExitError over a pipe-copy error. Hide optional copy methods on the inner call
+// so this observer cannot recurse or infer completion from a fast-path return.
+func (w *searchStream) ReadFrom(r io.Reader) (int64, error) {
+	n, err := io.Copy(struct{ io.Writer }{w}, struct{ io.Reader }{r})
+	w.complete = err == nil
+	return n, err
+}
+
 func runSearchCommand(parent context.Context, in searchInput, args []string, timeout time.Duration) (searchResult, bool, error) {
+	return runCommand(parent, in.Binary, args, searchEnvironment(), nil, timeout)
+}
+
+// Both concrete task callers share bounded process ownership, not a command API.
+func runCommand(parent context.Context, binary string, args, env []string, stdin []byte, timeout time.Duration) (searchResult, bool, error) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, in.Binary, args...)
-	cmd.Env = searchEnvironment()
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Env = env
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	cmd.WaitDelay = 250 * time.Millisecond
 	cleanup, err := searchProcess(cmd)
 	if err != nil {
@@ -119,7 +135,7 @@ func runSearchCommand(parent context.Context, in searchInput, args []string, tim
 		result.Outcome = "output_limit"
 	case ctx.Err() != nil:
 		result.Outcome = "interrupted"
-	case errors.Is(waitErr, exec.ErrWaitDelay):
+	case errors.Is(waitErr, exec.ErrWaitDelay) || !stdout.complete || !stderr.complete:
 		result.Outcome = "incomplete_streams"
 	case waitErr != nil:
 		var exit *exec.ExitError
@@ -214,4 +230,15 @@ func prepareSearch(ctx context.Context, in searchInput, project, run, traceText,
 			Response: &httpapi.Body{State: &response, Data: &responseData},
 		},
 	}}, nil
+}
+
+func trustedExecutable(binary string) error {
+	if !filepath.IsAbs(binary) || len(binary) > 4096 {
+		return errors.New("provide an absolute trusted executable")
+	}
+	info, err := os.Lstat(binary)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+		return errors.New("executable must be a regular executable file without privilege bits")
+	}
+	return nil
 }

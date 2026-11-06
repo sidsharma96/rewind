@@ -77,7 +77,12 @@ exercise separate producer and reader processes through TLS, lost replies and
 permission changes. The [service contract](SERVICE.md) defines the version-one wire
 format and short-lived browser sessions. Managed credentials, arbitrary producer
 integrations, complete trace assembly, production capacity and deployment/recovery
-release acceptance remain open.
+release acceptance remain open. The maintained shared-trace example adds a
+fixed Alice/Bob task using four no-tools model CLI invocations and one Concordance
+search. It stages completed observations privately before delivery and retries only
+those saved records, with service/store lifecycle kept outside the producer.
+It records CLI-visible exchanges, not provider requests, autonomous orchestration,
+execution resumption or source-retained task reproduction.
 
 The learning outcome remains part of the project: implement and explain storage
 formats, buffering and indexing choices, compaction, recovery and query algorithms

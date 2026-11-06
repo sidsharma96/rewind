@@ -431,7 +431,8 @@ response is an example-specific JSON observation with version, outcome, nullable
 exit code, signal, and stdout/stderr byte fields. JSON encodes those byte fields
 as Base64, preserving non-text bytes. This is not a Concordance result or citation
 protocol. A complete nonzero exit is a Present response and a failed span; an
-empty stream does not become Missing. Failure to start saves no invented response.
+empty stream does not become Missing. Complete output requires both stream copies
+to observe end-of-file; a process exit error cannot stand in for that check. Failure to start saves no invented response.
 Output overflow, cancellation or incomplete stream draining retains bounded partial
 evidence as Truncated, which saved-response playback refuses.
 
@@ -453,3 +454,91 @@ Client commands cap request/response documents at 16 MiB and do not auto-retry.
 `playback --out FILE` creates a new owner-readable file and prints its original
 receipt/request state; it refuses to overwrite. File close is checked, but that
 export is not a disk-sync or remote-backup promise.
+
+### A fixed Alice/Bob model task
+
+The maintained example also runs one fixed host-controlled task: Alice delegates,
+Bob chooses one Concordance query, the host searches, Bob reports the actual
+observation, and Alice answers. These are four separate Claude Code CLI invocations
+with tools, MCP, plugins and session persistence disabled, not autonomous agent
+orchestration or provider-level model tracing. The example uses the installed
+Claude Code print interface checked with 2.1.318. Select an explicit compatible
+model; there is no fallback. The trusted host needs its existing first-party Claude
+login or `ANTHROPIC_API_KEY`, plus the read-only Concordance source configuration.
+These remain separate from Rewind's host/Alice/Bob credentials.
+
+First set up the service, trusted host registration and separate Alice/Bob writer
+permissions as above. Store a question in a new private UTF-8 file, at most 4,096
+bytes. From the repository root, build the same `examples/shared-trace` program,
+then run against that externally owned service:
+
+```sh
+bin/shared-trace --role task --endpoint https://rewind.example.com:8443 \
+  --host-token-file host.token --alice-token-file alice.token \
+  --bob-token-file bob.token --task-dir ./task-observations \
+  --task-file ./question.txt --claude-bin /absolute/regular/claude \
+  --model claude-opus-5-5 --concordance-bin /absolute/regular/concordance \
+  --search-target kubernetes --search-edition 1.36
+```
+
+`--task-dir` must not exist. The program creates it privately and saves each
+completed observation as one immutable numbered plan, synchronizing the file and
+directory before proceeding. It then delivers the saved observations using the
+existing registration/span/capture operations. Successful receipts confirm service
+acceptance, not merely local staging. The example never installs, resets or removes
+catalogs, buckets or services, including when a tool fails. A failed complete search
+is Present with a failed span; its stderr reaches Bob's report, and Alice can
+explain that the evidence is unavailable. Missing and truncated tool observations
+also remain explicit. A model failure or invalid query stops dependent work while
+preserving and attempting delivery of the observed prefix. An interrupted producer
+keeps saved plans for a separate delivery attempt.
+
+After uncertain delivery, rerun only the saved observations:
+
+```sh
+bin/shared-trace --role task-retry --endpoint https://rewind.example.com:8443 \
+  --host-token-file host.token --alice-token-file alice.token \
+  --bob-token-file bob.token --task-dir ./task-observations
+```
+
+This role neither loads the original question nor checks/runs either executable.
+It registers and delivers the same saved identities and bytes, retaining original
+receipts for already accepted records. It does not execute unfinished steps.
+Starting `task` again with that directory is refused. A malformed or torn plan is
+an explicit error; do not regenerate identities or edit a plan to bypass it. A new
+intentional task execution needs a new directory and generates new identities.
+
+Use the ordinary reader trace/capture/playback commands with the project/trace
+locator printed in receipts. Each record has its own original acceptance; finding
+five observations does not prove a general trace complete. Metadata reports
+handoff parents, Bob's report links to the search, and Alice's answer links to
+Bob's report. Native catalog receipts establish owners; these relationship fields
+report application dependencies, not independent proof of causality.
+
+Model requests save exact arguments/system prompt and stdin bytes, and responses
+save the observed command outcome and raw CLI stdout/stderr. Byte fields within
+these example-specific JSON bodies use Base64, inside the public capture's own
+Base64 projection. Valid UTF-8 tool streams additionally reach the reporting model
+as text; that display projection never replaces the captured raw streams. The CLI
+JSON result and usage are observations reported by that CLI, not raw provider HTTP,
+hidden reasoning or verified model identity. Never infer a model's factual accuracy
+from successful termination.
+
+Before invocation the example records each selected executable's SHA-256 and byte
+count, bounded at 512 MiB. The trusted operator must keep those paths stable during
+execution. This is an observed file fingerprint, not a hostile-filesystem defense,
+retained executable, source-build identity or reproduction guarantee. The model
+process receives only unchanged PATH/HOME/USER/LOGNAME/SHELL/XDG_CONFIG_HOME and
+optional first-party API credential; the search receives only its existing source
+allowlist. No Rewind tokens or source credentials enter the model's arguments or
+input. This trusted host remains outside an untrusted-code sandbox.
+
+Each model invocation has a 150-second deadline, separate 64 KiB stdout/stderr
+limits and a 250-millisecond pipe-drain bound; the fixed search keeps its previous
+15-second outer deadline. Model stdin is capped at 128 KiB. A CLI budget flag of
+one dollar bounds each invocation according to that CLI's accounting; it is not a
+Rewind billing guarantee. These are example limits, not measured production capacity.
+At most five local plans of at most 1 MiB are read for delivery. Local plans remain
+sensitive staging, outside remote acknowledgment. A crash after an external effect
+but before its plan is saved can lose that observation; the example supplies no
+exactly-once execution, runtime resumption or retained task checkpoint.
