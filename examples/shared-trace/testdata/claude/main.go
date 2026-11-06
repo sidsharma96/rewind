@@ -29,6 +29,7 @@ func main() {
 	if json.Unmarshal(b, &input) != nil {
 		os.Exit(95)
 	}
+	mode, _ := os.ReadFile(filepath.Join(os.Getenv("HOME"), "model-fixture-mode"))
 	label := ""
 	result := ""
 	switch {
@@ -38,6 +39,9 @@ func main() {
 	case strings.Contains(system, "Choose exactly one"):
 		label = "choose"
 		result = `{"query":"failure","reason":"Exercise a complete failed search"}`
+		if string(mode) == "evidence" {
+			result = `{"query":"ContainerRestartRules","reason":"Inspect a saved source passage"}`
+		}
 	case strings.Contains(system, "Bob reporting"):
 		label = "report"
 		if input["stderr_utf8"] == "selected edition unavailable\n" {
@@ -61,7 +65,6 @@ func main() {
 	if file.Close() != nil {
 		os.Exit(98)
 	}
-	mode, _ := os.ReadFile(filepath.Join(os.Getenv("HOME"), "model-fixture-mode"))
 	failed := string(mode) == "failed" && label == "choose"
 	if string(mode) == "invalid" && label == "choose" {
 		result = "not query JSON"
