@@ -421,12 +421,18 @@ func TestNativeHTTPSharedTraceRetryAndBrowser(t *testing.T) {
 	}
 	html, resp := get("/login")
 	loginPreview := html
+	loginReferrerPolicy := resp.Header.Get("Referrer-Policy")
 	if resp.StatusCode != 200 {
 		t.Fatal(resp.StatusCode)
 	}
 	post := func(path string, form url.Values, from string) *http.Response {
 		t.Helper()
 		req, _ := http.NewRequest(http.MethodPost, origin+path, strings.NewReader(form.Encode()))
+		// Fetch: non-CORS POSTs from a no-referrer document carry an opaque origin.
+		// Model the served page policy, rather than assuming a browser sends ours.
+		if from == origin && loginReferrerPolicy == "no-referrer" {
+			from = "null"
+		}
 		req.Header.Set("Origin", from)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		resp, err := browser.Do(req)
@@ -438,8 +444,10 @@ func TestNativeHTTPSharedTraceRetryAndBrowser(t *testing.T) {
 		return resp
 	}
 	form := url.Values{"csrf": {csrf(html)}, "credential": {tokens["reader"]}}
-	if post("/login", form, "https://other.invalid").StatusCode != 400 {
-		t.Fatal("cross-origin login accepted")
+	for _, foreign := range []string{"https://other.invalid", "null", ""} {
+		if post("/login", form, foreign).StatusCode != 400 {
+			t.Fatal("foreign, opaque or absent Origin accepted")
+		}
 	}
 	resp = post("/login", form, origin)
 	if resp.StatusCode != 303 {

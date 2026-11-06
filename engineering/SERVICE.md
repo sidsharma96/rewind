@@ -137,7 +137,11 @@ responsibilities: a local sole catalog cannot meet remote durability before ack.
 
 Browser login uses a fixed same-origin form, a Secure/HttpOnly/SameSite=Strict
 host-only anti-forgery cookie and matching unpredictable hidden value. Login and
-logout require exact configured Origin plus that value. Successful login rotates
+logout require exact configured Origin plus that value. The response uses
+`Referrer-Policy: same-origin` so native same-origin form posts retain that Origin
+while cross-origin navigations omit referrer information. A `no-referrer` page
+can instead make the browser send `Origin: null`, which the form must refuse.
+Successful login rotates
 the session identifier. Session cookies use the `__Host-` prefix, Path=/, no Domain,
 Secure, HttpOnly, SameSite=Strict and expiry no later than credential/session
 expiry. Logout deletes the table entry and cookie; requests already authenticated
