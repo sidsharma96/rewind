@@ -30,6 +30,7 @@ type publicationObjects struct {
 	mu       sync.Mutex
 	data     map[string][]byte
 	puts     int
+	maxBytes int // zero retains the existing small fixture bound
 	afterPut func() error
 }
 
@@ -60,8 +61,12 @@ func (p *publicationObjects) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			peerError(w, 400, "InvalidRequest")
 			return
 		}
-		data, err := io.ReadAll(io.LimitReader(r.Body, 4097))
-		if err != nil || len(data) > 4096 {
+		limit := p.maxBytes
+		if limit == 0 {
+			limit = 4096
+		}
+		data, err := io.ReadAll(io.LimitReader(r.Body, int64(limit)+1))
+		if err != nil || len(data) > limit {
 			peerError(w, 400, "InvalidRequest")
 			return
 		}

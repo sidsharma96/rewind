@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -42,12 +43,8 @@ type searchResult struct {
 }
 
 func (in searchInput) args() ([]string, error) {
-	if !filepath.IsAbs(in.Binary) || len(in.Binary) > 4096 {
-		return nil, errors.New("provide an absolute trusted Concordance executable")
-	}
-	info, err := os.Lstat(in.Binary)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
-		return nil, errors.New("Concordance executable must be a regular executable file")
+	if err := trustedExecutable(in.Binary); err != nil {
+		return nil, err
 	}
 	for i, s := range []string{in.Target, in.Edition, in.Query} {
 		limit := 256
@@ -90,10 +87,18 @@ func (w *searchStream) Write(p []byte) (int, error) {
 }
 
 func runSearchCommand(parent context.Context, in searchInput, args []string, timeout time.Duration) (searchResult, bool, error) {
+	return runCommand(parent, in.Binary, args, searchEnvironment(), nil, timeout)
+}
+
+// Both concrete task callers share bounded process ownership, not a command API.
+func runCommand(parent context.Context, binary string, args, env []string, stdin []byte, timeout time.Duration) (searchResult, bool, error) {
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, in.Binary, args...)
-	cmd.Env = searchEnvironment()
+	cmd := exec.CommandContext(ctx, binary, args...)
+	cmd.Env = env
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
 	cmd.WaitDelay = 250 * time.Millisecond
 	cleanup, err := searchProcess(cmd)
 	if err != nil {
@@ -214,4 +219,15 @@ func prepareSearch(ctx context.Context, in searchInput, project, run, traceText,
 			Response: &httpapi.Body{State: &response, Data: &responseData},
 		},
 	}}, nil
+}
+
+func trustedExecutable(binary string) error {
+	if !filepath.IsAbs(binary) || len(binary) > 4096 {
+		return errors.New("provide an absolute trusted executable")
+	}
+	info, err := os.Lstat(binary)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0111 == 0 || info.Mode()&(os.ModeSetuid|os.ModeSetgid) != 0 {
+		return errors.New("executable must be a regular executable file without privilege bits")
+	}
+	return nil
 }
