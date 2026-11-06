@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -73,6 +74,7 @@ func searchEnvironment() []string {
 type searchStream struct {
 	data     []byte
 	overflow bool
+	complete bool
 	cancel   context.CancelFunc
 }
 
@@ -84,6 +86,15 @@ func (w *searchStream) Write(p []byte) (int, error) {
 		w.cancel()
 	}
 	return len(p), nil
+}
+
+// ReadFrom observes the copy's actual EOF, including when Cmd.Wait prefers an
+// ExitError over a pipe-copy error. Hide optional copy methods on the inner call
+// so this observer cannot recurse or infer completion from a fast-path return.
+func (w *searchStream) ReadFrom(r io.Reader) (int64, error) {
+	n, err := io.Copy(struct{ io.Writer }{w}, struct{ io.Reader }{r})
+	w.complete = err == nil
+	return n, err
 }
 
 func runSearchCommand(parent context.Context, in searchInput, args []string, timeout time.Duration) (searchResult, bool, error) {
@@ -124,7 +135,7 @@ func runCommand(parent context.Context, binary string, args, env []string, stdin
 		result.Outcome = "output_limit"
 	case ctx.Err() != nil:
 		result.Outcome = "interrupted"
-	case errors.Is(waitErr, exec.ErrWaitDelay):
+	case errors.Is(waitErr, exec.ErrWaitDelay) || !stdout.complete || !stderr.complete:
 		result.Outcome = "incomplete_streams"
 	case waitErr != nil:
 		var exit *exec.ExitError

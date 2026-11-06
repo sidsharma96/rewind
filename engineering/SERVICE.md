@@ -431,7 +431,8 @@ response is an example-specific JSON observation with version, outcome, nullable
 exit code, signal, and stdout/stderr byte fields. JSON encodes those byte fields
 as Base64, preserving non-text bytes. This is not a Concordance result or citation
 protocol. A complete nonzero exit is a Present response and a failed span; an
-empty stream does not become Missing. Failure to start saves no invented response.
+empty stream does not become Missing. Complete output requires both stream copies
+to observe end-of-file; a process exit error cannot stand in for that check. Failure to start saves no invented response.
 Output overflow, cancellation or incomplete stream draining retains bounded partial
 evidence as Truncated, which saved-response playback refuses.
 

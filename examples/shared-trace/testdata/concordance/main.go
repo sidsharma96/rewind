@@ -36,11 +36,14 @@ func main() {
 		_, _ = os.Stdout.Write(bytes.Repeat([]byte{'x'}, 1<<20))
 	case "wait":
 		time.Sleep(time.Hour)
-	case "drain":
+	case "drain", "drain-failure":
 		child := exec.Command(os.Args[0], "child")
 		child.Stdout, child.Stderr = os.Stdout, os.Stderr
 		if child.Start() != nil {
 			os.Exit(92)
+		}
+		if query == "drain-failure" {
+			os.Exit(17)
 		}
 	case "environment":
 		if os.Getenv("REWIND_SERVICE_SECRET") != "" || os.Getenv("SSH_AUTH_SOCK") != "" || os.Getenv("CONCORDANCE_COLLECTION") != "fixture" {
