@@ -84,11 +84,16 @@ func deliverTask(ctx context.Context, plans []plan, host, alice, bob *httpapi.Cl
 		if err != nil {
 			return fmt.Errorf("task capture delivery: %w; use task-retry with the saved directory", err)
 		}
+		traceURL, err := writer.TraceViewURL(p.Execution.Project, p.Execution.Trace)
+		if err != nil {
+			return err
+		}
 		if err = json.NewEncoder(os.Stdout).Encode(struct {
+			TraceURL  string            `json:"trace_url"`
 			Execution httpapi.Execution `json:"execution"`
 			Span      httpapi.Receipt   `json:"span_receipt"`
 			Capture   httpapi.Receipt   `json:"capture_receipt"`
-		}{p.Execution, span, capture}); err != nil {
+		}{traceURL, p.Execution, span, capture}); err != nil {
 			return errors.New("task receipt output failed; use task-retry")
 		}
 	}

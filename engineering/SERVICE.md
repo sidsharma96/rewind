@@ -508,6 +508,23 @@ Starting `task` again with that directory is refused. A malformed or torn plan i
 an explicit error; do not regenerate identities or edit a plan to bypass it. A new
 intentional task execution needs a new directory and generates new identities.
 
+Each confirmed receipt line includes a token-free `trace_url`. Open it to sign in
+and inspect the task; sign-in retains only a validated internal read destination.
+The link selects the example's command-observation v1 display. It shows command
+arguments, stdin, stdout/stderr and the CLI-reported result for `claude print`.
+Exit status, capture availability and answer correctness remain separate facts.
+A successful command can return irrelevant or incorrect content.
+
+This is an explicit reader interpretation of the existing capture, not a new
+storage or admission schema. Each interpreted request/response is capped at 256 KiB
+before decoding; text/hex previews show at most 16 KiB of stream bytes each, with
+clipping identified separately from the saved capture state. Missing/redacted
+bytes remain unavailable. A structurally decodable truncated observation may show
+retained partial evidence, but complete-response playback still refuses it.
+Unknown versions, unsupported fields and malformed observations keep their raw
+preview with a display refusal. Exact downloads preserve the original response,
+including the command envelope; interpreted text is not the playback result.
+
 Use the ordinary reader trace/capture/playback commands with the project/trace
 locator printed in receipts. Each record has its own original acceptance; finding
 five observations does not prove a general trace complete. Metadata reports

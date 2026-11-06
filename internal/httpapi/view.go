@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -35,6 +36,8 @@ type viewData struct {
 	TracePage                                         bool
 	Login                                             bool
 	Error, CSRF, Project, Trace, Title, Next, Refresh string
+	ReturnTo, Format, RawURL, CommandURL              string
+	Command                                           *commandPresentation
 	Rows                                              []row
 	Capture                                           *Capture
 	Request, Response                                 preview
@@ -92,8 +95,14 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/login" {
 		switch r.Method {
 		case http.MethodGet:
-			if r.URL.RawQuery != "" {
+			loginQuery, queryErr := url.ParseQuery(r.URL.RawQuery)
+			if queryErr != nil || len(loginQuery) > 1 || (r.URL.RawQuery != "" && len(loginQuery["return"]) != 1) {
 				s.fail(w, r, ErrProtocol, false)
+				return
+			}
+			destination, err := loginDestination(loginQuery.Get("return"))
+			if err != nil {
+				s.fail(w, r, err, false)
 				return
 			}
 			token, err := s.challenge(w, r)
@@ -101,11 +110,22 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 				s.fail(w, r, err, false)
 				return
 			}
-			s.render(w, r, viewData{Login: true, Title: "Sign in", CSRF: token})
+			s.render(w, r, viewData{Login: true, Title: "Sign in", CSRF: token, ReturnTo: destination})
 		case http.MethodPost:
-			if s.form(w, r) != nil || len(r.PostForm) != 2 || len(r.PostForm["credential"]) != 1 {
+			if s.form(w, r) != nil || (len(r.PostForm) != 2 && len(r.PostForm) != 3) || len(r.PostForm["credential"]) != 1 || len(r.PostForm["return"]) > 1 {
 				s.fail(w, r, ErrProtocol, false)
 				return
+			}
+			destination, err := loginDestination(r.PostForm.Get("return"))
+			if err != nil {
+				s.fail(w, r, err, false)
+				return
+			}
+			for key := range r.PostForm {
+				if key != "csrf" && key != "credential" && key != "return" {
+					s.fail(w, r, ErrProtocol, false)
+					return
+				}
 			}
 			id, expires, err := s.sessions.Login(r.Context(), r.PostForm.Get("credential"))
 			if err != nil {
@@ -117,7 +137,7 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 			}
 			http.SetCookie(w, cookie(sessionCookie, id, expires))
 			http.SetCookie(w, &http.Cookie{Name: challengeCookie, Value: "", Path: "/", Secure: true, HttpOnly: true, SameSite: http.SameSiteStrictMode, MaxAge: -1})
-			http.Redirect(w, r, "/", http.StatusSeeOther)
+			http.Redirect(w, r, destination, http.StatusSeeOther)
 		default:
 			s.fail(w, r, ErrProtocol, false)
 		}
@@ -141,7 +161,14 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, err := s.authenticate(r, false)
 	if err != nil {
-		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		target := r.URL.RequestURI()
+		if r.URL.Path == "/view/response" {
+			target = strings.Replace(target, "/view/response", "/view/capture", 1)
+		}
+		if _, invalid := loginDestination(target); invalid != nil {
+			target = "/"
+		}
+		http.Redirect(w, r, "/login?return="+url.QueryEscape(target), http.StatusSeeOther)
 		return
 	}
 	r = r.WithContext(ctx)
@@ -164,10 +191,15 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for key, values := range query {
-		if len(values) != 1 || key != "project" && key != "trace" && key != "span" && key != "cursor" {
+		if len(values) != 1 || key != "project" && key != "trace" && key != "span" && key != "cursor" && key != "format" {
 			s.fail(w, r, ErrProtocol, false)
 			return
 		}
+	}
+	format := query.Get("format")
+	if format != "" && format != "command-v1" {
+		s.fail(w, r, ErrProtocol, false)
+		return
 	}
 	project, err := parseOpaque(query.Get("project"))
 	if err != nil {
@@ -180,7 +212,7 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e := ingest.Execution{Tenant: project, Trace: trace}
-	data := viewData{Title: "Shared trace", CSRF: challenge, Project: Opaque(project), Trace: trace.String(), Refresh: viewURL("/view", e)}
+	data := viewData{Title: "Shared trace", CSRF: challenge, Project: Opaque(project), Trace: trace.String(), Refresh: inspectionURL("/view", e, format), Format: format}
 	switch r.URL.Path {
 	case "/view":
 		data.TracePage = true
@@ -194,12 +226,12 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if page.Next != "" {
-			data.Next = viewURL("/view", e) + "&cursor=" + url.QueryEscape(page.Next)
+			data.Next = inspectionURL("/view", e, format) + "&cursor=" + url.QueryEscape(page.Next)
 		}
 		for _, item := range page.Items {
 			itemExecution := e
 			itemExecution.Span, _ = traceid.ParseSpan(item.Span)
-			v := row{ID: item.Span, State: item.State, Name: "No final span", Owner: "Unavailable", Status: "Unavailable", Timing: "Unavailable", URL: viewURL("/view/capture", itemExecution)}
+			v := row{ID: item.Span, State: item.State, Name: "No final span", Owner: "Unavailable", Status: "Unavailable", Timing: "Unavailable", URL: inspectionURL("/view/capture", itemExecution, format)}
 			if item.State == "available" {
 				packet, err := s.metadata.Decode(item.Metadata)
 				if err != nil {
@@ -238,7 +270,7 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 				if parent, err := traceid.SpanFromBytes(span.Metadata.ParentSpanId); err == nil {
 					target := e
 					target.Span = parent
-					v.Relationships = append(v.Relationships, relationship{"Reported parent " + parent.String() + " (target may be outside this page)", viewURL("/view/capture", target)})
+					v.Relationships = append(v.Relationships, relationship{"Reported parent " + parent.String() + " (target may be outside this page)", inspectionURL("/view/capture", target, format)})
 				}
 				for _, link := range span.Metadata.Links {
 					target, usable, err := record.TargetOfLink(link)
@@ -251,7 +283,7 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 					other := ingest.Execution{Tenant: e.Tenant, Trace: target.Trace, Span: target.Span}
-					v.Relationships = append(v.Relationships, relationship{"Reported link " + target.Trace.String() + "/" + target.Span.String() + " (not proof of existence)", viewURL("/view/capture", other)})
+					v.Relationships = append(v.Relationships, relationship{"Reported link " + target.Trace.String() + "/" + target.Span.String() + " (not proof of existence)", inspectionURL("/view/capture", other, format)})
 				}
 				kind := int32(span.Metadata.Kind)
 				if kind < 0 || kind > 5 {
@@ -299,6 +331,12 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err, false)
 			return
 		}
+		data.RawURL = inspectionURL("/view/capture", e, "")
+		data.CommandURL = inspectionURL("/view/capture", e, "command-v1")
+		if format == "command-v1" {
+			v := commandView(capture)
+			data.Command = &v
+		}
 		data.Capture = &capture
 		data.Title = "Captured request and response"
 		data.Request = bodyPreview(capture.Request)
@@ -342,11 +380,23 @@ func bodyPreview(b Body) preview {
 		out.Text = "Bytes were redacted by the producer."
 		return out
 	}
-	data, err := base64.StdEncoding.Strict().DecodeString(*b.Data)
+	// One extra decoded byte detects clipping without allocating the full body.
+	const maxPreview = 4096
+	encodedLimit := base64.StdEncoding.EncodedLen(maxPreview + 1)
+	encoded := *b.Data
+	if len(encoded) > encodedLimit {
+		encoded = encoded[:encodedLimit]
+	}
+	data, err := base64.StdEncoding.Strict().DecodeString(encoded)
 	if err != nil {
 		return out
 	}
-	const maxPreview = 4096
+	shown := bytesPreview(data, maxPreview)
+	shown.State = out.State
+	return shown
+}
+func bytesPreview(data []byte, maxPreview int) preview {
+	out := preview{}
 	truncated := len(data) > maxPreview
 	if truncated {
 		data = data[:maxPreview]
@@ -359,7 +409,7 @@ func bodyPreview(b Body) preview {
 		out.Encoding = "Hexadecimal preview"
 	}
 	if truncated {
-		out.Encoding += "; first 4096 retained bytes only (saved capture state unchanged)"
+		out.Encoding += fmt.Sprintf("; first %d retained bytes only (saved capture state unchanged)", maxPreview)
 	}
 	if len(data) == 0 {
 		out.Text = "(zero bytes)"
@@ -383,7 +433,8 @@ func (s *Server) renderFailure(w http.ResponseWriter, r *http.Request, status in
 		message = "The service could not complete this operation. No successful read is returned."
 	}
 	csrf, _ := s.challenge(w, r)
-	data := viewData{Title: http.StatusText(status), Error: message, Login: r.URL.Path == "/login", CSRF: csrf}
+	destination, _ := loginDestination(r.PostForm.Get("return"))
+	data := viewData{Title: http.StatusText(status), Error: message, Login: r.URL.Path == "/login", CSRF: csrf, ReturnTo: destination}
 	b := boundedBuffer{max: s.limits.MaxResponseBytes}
 	if pageTemplate.Execute(&b, data) != nil {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")

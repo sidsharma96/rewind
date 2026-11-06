@@ -31,6 +31,12 @@ import (
 )
 
 func TestNativeAgentTaskRetryDoesNotExecute(t *testing.T) {
+	testNativeAgentTaskInspection(t, "")
+}
+func TestNativeAgentTaskSuccessfulInspection(t *testing.T) {
+	testNativeAgentTaskInspection(t, "evidence")
+}
+func testNativeAgentTaskInspection(t *testing.T, fixtureMode string) {
 	f := database(t)
 	f.seed(t, f.r)
 	f.policy(t, "DELETE FROM "+f.c.table("creator_grants"))
@@ -199,6 +205,11 @@ func TestNativeAgentTaskRetryDoesNotExecute(t *testing.T) {
 			}
 		}
 	}
+	if fixtureMode != "" && actualModel == "" {
+		if err := os.WriteFile(filepath.Join(dir, "model-fixture-mode"), []byte(fixtureMode), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	taskDir, question := filepath.Join(dir, "task"), filepath.Join(dir, "question")
 	if err := os.WriteFile(question, []byte("In Kubernetes 1.36, when can container restart rules override the Pod policy and which containers are covered? Use only retrieved evidence; explain unknowns."), 0600); err != nil {
 		t.Fatal(err)
@@ -215,6 +226,7 @@ func TestNativeAgentTaskRetryDoesNotExecute(t *testing.T) {
 		t.Fatalf("task did not reach confirmed fifth publication reply loss: %s", data)
 	}
 	var first struct {
+		TraceURL  string            `json:"trace_url"`
 		Execution httpapi.Execution `json:"execution"`
 	}
 	line := bytes.SplitN(data, []byte("\n"), 2)[0]
@@ -276,6 +288,11 @@ func TestNativeAgentTaskRetryDoesNotExecute(t *testing.T) {
 			t.Fatal("playback changed task observation")
 		}
 	}
+	inspectTaskBrowser(t, server, first.TraceURL, tokens["reader"], observedCaptures, func() {
+		f.policy(t, "DELETE FROM "+f.c.table("reader_grants"))
+	}, func() {
+		f.policy(t, "INSERT INTO "+f.c.table("reader_grants")+" VALUES($1,$2)", []byte(f.r.Execution.Tenant), []byte("reader"))
+	}, func() string { return fmt.Sprint(peer.snapshot()) })
 	// Only after independent discovery compare each complete saved observation.
 	names := []string{"alice.delegate", "bob.choose-search", "concordance.search", "bob.report", "alice.answer"}
 	for i, name := range names {
@@ -307,8 +324,14 @@ func TestNativeAgentTaskRetryDoesNotExecute(t *testing.T) {
 				Exit   *int   `json:"exit_code"`
 				Stderr []byte `json:"stderr"`
 			}
-			if json.Unmarshal(b, &command) != nil || command.Exit == nil || *command.Exit != 17 || string(command.Stderr) != "selected edition unavailable\n" || *c.Response.State != record.BodyPresent {
-				t.Fatal("complete failed search lost")
+			expectedExit := 17
+			expectedError := "selected edition unavailable\n"
+			if fixtureMode == "evidence" {
+				expectedExit = 0
+				expectedError = ""
+			}
+			if json.Unmarshal(b, &command) != nil || command.Exit == nil || *command.Exit != expectedExit || string(command.Stderr) != expectedError || *c.Response.State != record.BodyPresent {
+				t.Fatal("complete search observation lost")
 			}
 		}
 	}
@@ -366,6 +389,8 @@ func TestNativeAgentTaskRetryDoesNotExecute(t *testing.T) {
 	}
 	if actualModel != "" {
 		t.Log("explicit real task: four model CLI exchanges and Concordance search saved; lost successful final-capture reply; fresh project/trace read before retry; both executables/input removed; original receipts retained with zero object I/O")
+	} else if fixtureMode == "evidence" {
+		t.Log("controlled task: successful search preserved through report/answer; ordinary browser inspection and exact playback with tools removed; original receipts retained on retry")
 	} else {
 		t.Log("controlled task: failed search preserved through report/answer; lost final-capture reply; fresh trace-only read; delivery retry with no executables/input retains original receipts and zero object I/O")
 	}
