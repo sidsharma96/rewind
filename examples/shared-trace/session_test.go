@@ -13,6 +13,7 @@ import (
 func sessionFixture() []byte {
 	return []byte(`{"type":"system","subtype":"init","session_id":"s","claude_code_version":"2.1.318"}
 {"type":"assistant","session_id":"s","message":{"content":[{"type":"tool_use","id":"delegate","name":"Agent","input":{"run_in_background":false}}]}}
+{"type":"system","subtype":"task_started","session_id":"s","task_id":"worker-1","tool_use_id":"delegate","is_backgrounded":false,"spawn_depth":1}
 {"type":"assistant","session_id":"s","agent_id":"worker-1","parent_tool_use_id":"delegate","message":{"content":[{"type":"tool_use","id":"read-bad","name":"Read","input":{"file_path":"missing"}},{"type":"tool_use","id":"read-ok","name":"Read","input":{"file_path":"fixture"}}]}}
 {"type":"user","session_id":"s","agent_id":"worker-1","parent_tool_use_id":"delegate","message":{"content":[{"type":"tool_result","tool_use_id":"read-ok","content":"1\tretained source\n"},{"type":"tool_result","tool_use_id":"read-bad","content":"file missing","is_error":true}]}}
 {"type":"user","session_id":"s","message":{"content":[{"type":"tool_result","tool_use_id":"delegate","content":[{"type":"text","text":"worker report"}]}]}}
@@ -151,5 +152,48 @@ func TestSessionRetryRefusesScopeAndBodyChanges(t *testing.T) {
 				t.Fatal("unsafe retry plan accepted")
 			}
 		})
+	}
+}
+
+func TestSessionRequiresObservedForeground(t *testing.T) {
+	raw := string(sessionFixture())
+	for name, input := range map[string]string{
+		"runtime background despite request": strings.Replace(raw, `"is_backgrounded":false`, `"is_backgrounded":true`, 1),
+		"missing requested mode":             strings.Replace(raw, `"run_in_background":false`, `"other":false`, 1),
+		"missing observed mode":              strings.Replace(raw, `"is_backgrounded":false`, `"other":false`, 1),
+		"reported nested spawn":              strings.Replace(raw, `"spawn_depth":1`, `"spawn_depth":2`, 1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, _, _, err := parseSession([]byte(input)); err == nil {
+				t.Fatal("ambiguous/background runtime accepted")
+			}
+		})
+	}
+}
+
+func TestSessionInvalidPlanLeavesNoFile(t *testing.T) {
+	var lines []string
+	for _, line := range strings.Split(string(sessionFixture()), "\n") {
+		if strings.Contains(line, `"agent_id":"worker-1"`) {
+			continue
+		}
+		if strings.HasPrefix(line, `{"type":"user","session_id":"s","message"`) {
+			lines = append(lines, `{"type":"assistant","session_id":"s","agent_id":"worker-1","parent_tool_use_id":"delegate","message":{"content":[{"type":"text","text":"No tools needed"}]}}`)
+		}
+		lines = append(lines, line)
+	}
+	dir := t.TempDir()
+	stream, prompt, planFile := filepath.Join(dir, "stream"), filepath.Join(dir, "prompt"), filepath.Join(dir, "plan")
+	if err := os.WriteFile(stream, []byte(strings.Join(lines, "\n")), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(prompt, []byte("question"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := sessionCommand(t.Context(), taskOptions{Project: "demo", Run: "run", InputFile: prompt}, stream, planFile, false); err == nil {
+		t.Fatal("unsupported session accepted")
+	}
+	if _, err := os.Lstat(planFile); !os.IsNotExist(err) {
+		t.Fatal("refused session left an unusable plan")
 	}
 }

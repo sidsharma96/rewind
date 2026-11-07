@@ -99,7 +99,8 @@ func TestNativeClaudeSessionInspectionAndRetry(t *testing.T) {
 	}
 	stream, prompt, plan := filepath.Join(dir, "stream"), filepath.Join(dir, "prompt"), filepath.Join(dir, "saved.plan")
 	input := `{"type":"system","subtype":"init","session_id":"test","claude_code_version":"2.1.318"}
-{"type":"assistant","session_id":"test","message":{"content":[{"type":"tool_use","id":"delegate","name":"Agent","input":{}}]}}
+{"type":"assistant","session_id":"test","message":{"content":[{"type":"tool_use","id":"delegate","name":"Agent","input":{"run_in_background":false}}]}}
+{"type":"system","subtype":"task_started","session_id":"test","task_id":"child","tool_use_id":"delegate","is_backgrounded":false,"spawn_depth":1}
 {"type":"assistant","session_id":"test","agent_id":"child","parent_tool_use_id":"delegate","message":{"content":[{"type":"tool_use","id":"read","name":"Read","input":{"file_path":"missing"}}]}}
 {"type":"user","session_id":"test","agent_id":"child","parent_tool_use_id":"delegate","message":{"content":[{"type":"tool_result","tool_use_id":"read","content":"File missing <script>bad()</script>","is_error":true}]}}
 {"type":"user","session_id":"test","message":{"content":[{"type":"tool_result","tool_use_id":"delegate","content":"worker saw a failed read"}]}}

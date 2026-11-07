@@ -38,13 +38,17 @@ type sessionCall struct {
 }
 
 type sessionEvent struct {
-	Type    string `json:"type"`
-	Subtype string `json:"subtype"`
-	Session string `json:"session_id"`
-	Version string `json:"claude_code_version"`
-	Agent   string `json:"agent_id"`
-	Parent  string `json:"parent_tool_use_id"`
-	Message struct {
+	Type         string `json:"type"`
+	Subtype      string `json:"subtype"`
+	Session      string `json:"session_id"`
+	Version      string `json:"claude_code_version"`
+	Agent        string `json:"agent_id"`
+	Parent       string `json:"parent_tool_use_id"`
+	TaskID       string `json:"task_id"`
+	ToolUseID    string `json:"tool_use_id"`
+	Backgrounded *bool  `json:"is_backgrounded"`
+	SpawnDepth   int    `json:"spawn_depth"`
+	Message      struct {
 		Content json.RawMessage `json:"content"`
 	} `json:"message"`
 	Result  *string `json:"result"`
@@ -86,7 +90,7 @@ func parseSession(raw []byte) ([]sessionCall, []byte, bool, error) {
 	if len(lines) > 513 { // Each independent byte, line and operation cap is enforced.
 		return nil, nil, false, errors.New("session exceeds 512 CLI lines")
 	}
-	var session, child, handoff string
+	var session, child, handoff, startedChild string
 	var calls []sessionCall
 	index := map[string]int{}
 	var final []byte
@@ -119,7 +123,7 @@ func parseSession(raw []byte) ([]sessionCall, []byte, bool, error) {
 			return bad()
 		}
 		if e.Agent != "" {
-			if !sessionID(e.Agent) || e.Parent != handoff || handoff == "" || (child != "" && e.Agent != child) {
+			if !sessionID(e.Agent) || e.Agent != startedChild || e.Parent != handoff || handoff == "" || (child != "" && e.Agent != child) {
 				return bad()
 			}
 			child = e.Agent
@@ -132,7 +136,14 @@ func parseSession(raw []byte) ([]sessionCall, []byte, bool, error) {
 			// kinds need an explicit compatibility check, not an end-span guess.
 			if e.Type == "system" {
 				switch e.Subtype {
-				case "task_started", "task_progress", "task_updated", "task_notification":
+				case "task_started":
+					// Requested mode is not evidence of the mode that ran. Check
+					// the runtime's explicit start report as well as the Agent input.
+					if startedChild != "" || !sessionID(e.TaskID) || e.ToolUseID != handoff || handoff == "" || e.Backgrounded == nil || *e.Backgrounded || e.SpawnDepth != 1 {
+						return bad()
+					}
+					startedChild = e.TaskID
+				case "task_progress", "task_updated", "task_notification":
 				default:
 					return bad()
 				}
@@ -163,9 +174,9 @@ func parseSession(raw []byte) ([]sessionCall, []byte, bool, error) {
 					}
 					if block.Name == "Agent" {
 						var options struct {
-							Background bool `json:"run_in_background"`
+							Background *bool `json:"run_in_background"`
 						}
-						if e.Agent != "" || handoff != "" || string(input["run_in_background"]) == "null" || json.Unmarshal(block.Input, &options) != nil || options.Background {
+						if e.Agent != "" || handoff != "" || json.Unmarshal(block.Input, &options) != nil || options.Background == nil || *options.Background {
 							return bad()
 						}
 						handoff = block.ID
@@ -226,11 +237,18 @@ func prepareSession(ctx context.Context, raw, prompt []byte, project, run string
 		if failed {
 			status = 2
 		}
-		metadata := map[string]any{"traceId": sc.TraceID().String(), "spanId": sc.SpanID().String(), "name": name, "status": map[string]any{"code": status}}
+		metadata := map[string]any{
+			"traceId": sc.TraceID().String(), "spanId": sc.SpanID().String(),
+			"name": name, "status": map[string]any{"code": status},
+		}
 		if parent.IsValid() {
 			metadata["parentSpanId"] = parent.String()
 		}
-		packet, err := json.Marshal(map[string]any{"resourceSpans": []any{map[string]any{"scopeSpans": []any{map[string]any{"spans": []any{metadata}}}}}})
+		packet, err := json.Marshal(map[string]any{
+			"resourceSpans": []any{map[string]any{
+				"scopeSpans": []any{map[string]any{"spans": []any{metadata}}},
+			}},
+		})
 		if err != nil {
 			return plan{}, err
 		}
@@ -248,7 +266,17 @@ func prepareSession(ctx context.Context, raw, prompt []byte, project, run string
 		}
 		a, b := base64.StdEncoding.EncodeToString(req), base64.StdEncoding.EncodeToString(res)
 		yes, present := true, record.BodyPresent
-		return plan{Execution: httpapi.Execution{Project: httpapi.Opaque(project), Trace: sc.TraceID().String(), Span: sc.SpanID().String()}, Owner: httpapi.RegisterInput{Run: httpapi.Opaque(run), Instance: httpapi.Opaque(owner)}, Span: httpapi.SpanInput{Ended: &yes, Metadata: packet}, Capture: httpapi.CaptureInput{Request: &httpapi.Body{State: &present, Data: &a}, Response: &httpapi.Body{State: &present, Data: &b}}}, nil
+		return plan{
+			Execution: httpapi.Execution{
+				Project: httpapi.Opaque(project), Trace: sc.TraceID().String(), Span: sc.SpanID().String(),
+			},
+			Owner: httpapi.RegisterInput{Run: httpapi.Opaque(run), Instance: httpapi.Opaque(owner)},
+			Span:  httpapi.SpanInput{Ended: &yes, Metadata: packet},
+			Capture: httpapi.CaptureInput{
+				Request:  &httpapi.Body{State: &present, Data: &a},
+				Response: &httpapi.Body{State: &present, Data: &b},
+			},
+		}, nil
 	}
 	p, err := makePlan(root.SpanContext(), trace.SpanID{}, "claude.session", "alice", "", prompt, final, failed)
 	if err != nil {
@@ -301,12 +329,14 @@ func sessionCommand(ctx context.Context, o taskOptions, streamFile, planFile str
 		if err != nil {
 			return err
 		}
-		if err := save(planFile, plans); err != nil {
-			return err
-		}
 	}
 	if err := validateSessionPlans(plans, o.Project, o.Run); err != nil {
 		return err
+	}
+	if !retry {
+		if err := save(planFile, plans); err != nil {
+			return err
+		}
 	}
 	client, cleanup, err := exampleClients(o.Endpoint, o.CAFile)
 	if err != nil {

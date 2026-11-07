@@ -586,8 +586,11 @@ bin/shared-trace --role session --endpoint https://rewind.example.com:8443 \
 ```
 
 The adapter requires the checked runtime version, one session ID, exactly one
-foreground Agent handoff, one worker ID, matching call/result IDs, and a final
-root result. It refuses unsupported nested/background workers, unknown operation
+foreground Agent handoff, one worker ID with at least one tool call, matching call/result IDs, and a final
+root result. The request must explicitly set `run_in_background: false`; the
+runtime's `task_started` message must identify that call/worker, report
+`is_backgrounded: false` explicitly and report `spawn_depth: 1`. Missing mode
+fields do not establish foreground execution. It refuses unsupported nested/background workers, unknown operation
 kinds, duplicate IDs, orphan results and incomplete streams before saving plans
 or contacting Rewind. Its independent limits are 4 MiB of stream bytes, 128 KiB
 per line, 512 lines and 32 tool calls; reaching any limit refuses the import.
