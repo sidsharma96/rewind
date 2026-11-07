@@ -87,7 +87,8 @@ func save(path string, plans []plan) error {
 	return nil
 }
 func run(ctx context.Context) error {
-	role := flag.String("role", "", "alice, bob, bob-search, retry, task, task-retry or tool")
+	role := flag.String("role", "", "alice, bob, bob-search, retry, task, task-retry, session, session-retry or tool")
+	sessionFile := flag.String("session-file", "", "private completed Claude Code stream-json file for session")
 	endpoint := flag.String("endpoint", "", "Rewind HTTPS origin")
 	writerFile := flag.String("token-file", "", "private producer credential")
 	hostFile := flag.String("host-token-file", "", "private trusted host creator credential")
@@ -112,6 +113,16 @@ func run(ctx context.Context) error {
 	flag.Parse()
 	if flag.NArg() != 0 {
 		return errors.New("unexpected arguments")
+	}
+	if *role == "session" || *role == "session-retry" {
+		if *writerFile != "" || *traceText != "" || *parentText != "" || task.Directory != "" || task.ModelBinary != "" || task.Model != "" || *searchBinary != "" || *searchTarget != "" || *searchEdition != "" || *searchQuery != "" {
+			return errors.New("session roles take saved stream/prompt and separate delivery credentials")
+		}
+		task.Project, task.Run, task.Endpoint, task.CAFile, task.HostToken = *project, *run, *endpoint, *caFile, *hostFile
+		return sessionCommand(ctx, task, *sessionFile, *planFile, *role == "session-retry")
+	}
+	if *sessionFile != "" {
+		return errors.New("session-file requires role session")
 	}
 	if *role == "task" || *role == "task-retry" {
 		task.Project, task.Run = *project, *run

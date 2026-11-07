@@ -36,7 +36,7 @@ type viewData struct {
 	TracePage                                         bool
 	Login                                             bool
 	Error, CSRF, Project, Trace, Title, Next, Refresh string
-	ReturnTo, Format, RawURL, CommandURL              string
+	ReturnTo, Format, RawURL, CommandURL, SessionURL  string
 	Command                                           *commandPresentation
 	Rows                                              []row
 	Capture                                           *Capture
@@ -197,7 +197,7 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	format := query.Get("format")
-	if format != "" && format != "command-v1" {
+	if !supportedViewFormat(format) {
 		s.fail(w, r, ErrProtocol, false)
 		return
 	}
@@ -333,8 +333,13 @@ func (s *Server) view(w http.ResponseWriter, r *http.Request) {
 		}
 		data.RawURL = inspectionURL("/view/capture", e, "")
 		data.CommandURL = inspectionURL("/view/capture", e, "command-v1")
+		data.SessionURL = inspectionURL("/view/capture", e, "claude-stream-v1")
 		if format == "command-v1" {
 			v := commandView(capture)
+			data.Command = &v
+		}
+		if format == "claude-stream-v1" {
+			v := sessionView(capture)
 			data.Command = &v
 		}
 		data.Capture = &capture
