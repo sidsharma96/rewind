@@ -563,3 +563,77 @@ At most five local plans of at most 1 MiB are read for delivery. Local plans rem
 sensitive staging, outside remote acknowledgment. A crash after an external effect
 but before its plan is saved can lose that observation; the example supplies no
 exactly-once execution, runtime resumption or retained task checkpoint.
+
+### Importing one completed Claude Code session
+
+The `session` role reads a private Claude Code 2.1.318 `stream-json` file and an
+operator-supplied prompt. It constructs records automatically after the session
+ends, without launching agents, installing hooks or reading runtime transcripts.
+The prompt is context supplied by the operator; the stream does not prove that it
+was the original input. Use a separately configured run for each session, with
+one parent instance `alice` and one foreground worker instance `bob`. Current
+host-creator and writer grants must cover those exact project/run/instances.
+Runtime `agent_id`, tool names and relationship IDs supply no authority.
+
+For example, run the chosen CLI task with `--output-format stream-json --verbose`,
+save its output privately, and then use the existing shared-trace executable:
+
+```sh
+bin/shared-trace --role session --endpoint https://rewind.example.com:8443 \
+  --host-token-file host.token --alice-token-file alice.token \
+  --bob-token-file bob.token --project demo --run demo-run \
+  --session-file session.jsonl --task-file question.txt --plan-file session.plan
+```
+
+The adapter requires the checked runtime version, one session ID, exactly one
+foreground Agent handoff, one worker ID with at least one tool call, matching call/result IDs, and a final
+root result. The request must explicitly set `run_in_background: false`; the
+runtime's `task_started` message must identify that call/worker, report
+`is_backgrounded: false` explicitly and report `spawn_depth: 1`. Missing mode
+fields do not establish foreground execution. It refuses unsupported nested/background workers, unknown operation
+kinds, duplicate IDs, orphan results and incomplete streams before saving plans
+or contacting Rewind. Its independent limits are 4 MiB of stream bytes, 128 KiB
+per line, 512 lines and 32 tool calls; reaching any limit refuses the import.
+These limits do not promise that every 32-call session fits. Prompt input is
+limited to 4,096 bytes; the private saved plan is limited to 16 MiB on retry.
+
+Each tool pair becomes an ended span. A reported `is_error` produces Error status
+while its complete CLI-visible response remains Present. Child tool spans name
+the parent Agent call; top-level calls name the session span. Reported relationships
+do not prove causality. Imported timing remains unknown rather than using import
+time as execution time. The root capture retains the supplied prompt and final
+CLI result. This is a completed-session adapter, not remotely durable live progress
+or preservation of a process killed before its stream can be imported.
+
+Application capture bodies carry version 1, a source label, selected call ID and
+Base64-encoded original CLI line. Selection disambiguates parallel calls sharing
+one line; it does not remove sibling data from the retained evidence. The entire
+line, including its newline, is preserved. CLI results can contain line numbers,
+formatting or truncation supplied by the runtime. Present means the saved CLI
+observation is complete, not that raw tool bytes, provider traffic or every input
+needed to reproduce the task was captured. No new Rewind wire or stored-object
+format is introduced.
+
+After validation the adapter generates trace/span IDs once, saves the private
+plan with file and directory synchronization, then uses the existing registration,
+span and capture operations. If delivery is uncertain, use only that saved plan:
+
+```sh
+bin/shared-trace --role session-retry --endpoint https://rewind.example.com:8443 \
+  --host-token-file host.token --alice-token-file alice.token \
+  --bob-token-file bob.token --project demo --run demo-run --plan-file session.plan
+```
+
+Retry does not read the stream/prompt or invoke an agent or tool. Each accepted
+record retains its original receipt. The emitted trace link selects
+`claude-stream-v1`, a bounded reader interpretation showing the selected tool
+input/result or the final answer. Raw capture and exact saved-response downloads
+remain available; the download is the saved application capture body, including
+its selection and source label. Current project-reader permission still gates
+all reads.
+
+The official [SDK message parser](https://github.com/anthropics/claude-agent-sdk-python/blob/2209f2c134fee914c0f75733b631a5fc238ca846/src/claude_agent_sdk/_internal/message_parser.py#L95-L220)
+likewise decodes tool-use inputs, tool-result content/error flags and parent tool
+IDs from CLI messages. That supports the chosen integration boundary; Rewind's
+adapter remains a small Go consumer with an explicitly checked runtime version,
+not a compatible implementation of the whole SDK.

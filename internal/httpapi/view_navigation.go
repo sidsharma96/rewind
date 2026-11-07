@@ -42,7 +42,7 @@ func loginDestination(raw string) (string, error) {
 	if _, err = traceid.ParseTrace(q.Get("trace")); err != nil {
 		return "", ErrProtocol
 	}
-	if q.Get("format") != "" && q.Get("format") != "command-v1" {
+	if !supportedViewFormat(q.Get("format")) {
 		return "", ErrProtocol
 	}
 	if u.Path == "/view/capture" {
@@ -56,6 +56,10 @@ func loginDestination(raw string) (string, error) {
 		return "", ErrProtocol
 	}
 	return u.Path + "?" + q.Encode(), nil
+}
+
+func supportedViewFormat(format string) bool {
+	return format == "" || format == "command-v1" || format == "claude-stream-v1"
 }
 
 // TraceViewURL returns a token-free browser locator using this validated origin.

@@ -36,8 +36,8 @@
 </form>
 {{if .Trace}}<nav>
 <a href="{{.Refresh}}">Refresh from beginning</a>{{if .Next}}<a href="{{.Next}}">Next page →</a>{{end}}</nav>{{end}}{{if .TracePage}}<p class="notice">A current page of available evidence. Span-ID order is navigation, not causal order. Late arrivals may require refreshing. An exhausted page never proves a complete trace.</p>{{end}}
-{{if .Capture}}<nav><a href="{{.RawURL}}">Raw capture</a><a href="{{.CommandURL}}">Read as command observation v1</a></nav>
-{{if .Command}}<section><h2>Recorded command exchange</h2>{{range .Command.Notices}}<p class="notice">{{.}}</p>{{end}}
+{{if .Capture}}<nav><a href="{{.RawURL}}">Raw capture</a><a href="{{.CommandURL}}">Read as command observation v1</a><a href="{{.SessionURL}}">Read as Claude CLI exchange v1</a></nav>
+{{if .Command}}<section><h2>{{if eq .Format "claude-stream-v1"}}Recorded Claude CLI exchange{{else}}Recorded command exchange{{end}}</h2>{{range .Command.Notices}}<p class="notice">{{.}}</p>{{end}}
 {{range .Command.Fields}}<h3>{{.Title}}</h3><p>{{.Note}}</p><p class="muted">{{.Value.Encoding}}</p><pre>{{.Value.Text}}</pre>{{end}}</section>{{end}}
 <p class="mono">{{.Capture.Trace}} / {{.Capture.Span}}</p>
 <section>

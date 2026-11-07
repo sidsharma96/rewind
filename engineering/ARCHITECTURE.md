@@ -83,6 +83,11 @@ search. It stages completed observations privately before delivery and retries o
 those saved records, with service/store lifecycle kept outside the producer.
 It records CLI-visible exchanges, not provider requests, autonomous orchestration,
 execution resumption or source-retained task reproduction.
+A completed-session adapter also imports checked Claude Code CLI streams for one
+parent and one foreground worker, constructs independently owned tool records and
+shows their CLI-visible inputs/results in the inspector. It does not install
+runtime hooks or provide live-progress durability; its private saved plan drives
+delivery-only retries. See [the supported session boundary](SERVICE.md#importing-one-completed-claude-code-session).
 
 The learning outcome remains part of the project: implement and explain storage
 formats, buffering and indexing choices, compaction, recovery and query algorithms
