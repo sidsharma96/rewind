@@ -76,13 +76,9 @@ func deliverTask(ctx context.Context, plans []plan, host, alice, bob *httpapi.Cl
 		if _, err := host.Register(ctx, p.Execution, p.Owner); err != nil {
 			return fmt.Errorf("task registration: %w; use task-retry with the saved directory", err)
 		}
-		span, err := writer.SaveSpan(ctx, p.Execution, p.Span)
+		span, capture, err := deliverRecords(ctx, writer, p)
 		if err != nil {
-			return fmt.Errorf("task span delivery: %w; use task-retry with the saved directory", err)
-		}
-		capture, err := writer.SaveCapture(ctx, p.Execution, p.Capture)
-		if err != nil {
-			return fmt.Errorf("task capture delivery: %w; use task-retry with the saved directory", err)
+			return fmt.Errorf("task record delivery: %w; use task-retry with the saved directory", err)
 		}
 		traceURL, err := writer.TraceViewURL(p.Execution.Project, p.Execution.Trace)
 		if err != nil {
