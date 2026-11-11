@@ -363,13 +363,9 @@ func sessionCommand(ctx context.Context, o taskOptions, streamFile, planFile str
 		if _, err = host.Register(ctx, p.Execution, p.Owner); err != nil {
 			return fmt.Errorf("session registration: %w; use session-retry", err)
 		}
-		span, err := writer.SaveSpan(ctx, p.Execution, p.Span)
+		span, capture, err := deliverRecords(ctx, writer, p)
 		if err != nil {
-			return fmt.Errorf("session span: %w; use session-retry", err)
-		}
-		capture, err := writer.SaveCapture(ctx, p.Execution, p.Capture)
-		if err != nil {
-			return fmt.Errorf("session capture: %w; use session-retry", err)
+			return fmt.Errorf("session record delivery: %w; use session-retry", err)
 		}
 		locator, err := writer.TraceViewURL(p.Execution.Project, p.Execution.Trace)
 		if err != nil {

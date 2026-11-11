@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/sidsharma96/rewind/internal/record"
@@ -83,7 +84,8 @@ type TracePage struct {
 }
 
 // TraceReader shares its Spans coordinator's admission slot through all catalog,
-// sequential object and decoding work. It owns no workers, queues or local cache.
+// object and decoding work. A spare slot permits one joined helper worker;
+// otherwise reads stay serial. It owns no queues or local cache.
 // The caller owns returned graphs and must bound results it retains after return.
 type TraceReader struct {
 	spans   *Spans
@@ -171,15 +173,7 @@ items:
 				// This key fits a fresh page. Leave it unconsumed for the next call.
 				break items
 			}
-			stored, err := s.readObject(ctx, receipt.Reference)
-			if err != nil {
-				return TracePage{}, err
-			}
-			span, err := r.spans.decodeSpan(ctx, execution, stored)
-			if err != nil {
-				return TracePage{}, err
-			}
-			item.State, item.Receipt, item.Span = TraceAvailable, receipt, span
+			item.State, item.Receipt = TraceAvailable, receipt
 			used += size
 		}
 		page.Items = append(page.Items, item)
@@ -189,8 +183,70 @@ items:
 		// A nonempty key always fits an empty page or returns ErrTooLarge above.
 		page.Next = TraceCursor{tenant: tenant, trace: trace, after: keys[consumed-1]}
 	}
-	if err := ctx.Err(); err != nil {
+	if err := r.loadSpans(ctx, page.Items); err != nil {
 		return TracePage{}, err
 	}
 	return page, nil
+}
+
+// loadSpans receives only authorized, budgeted receipts. Each worker writes
+// disjoint item slots; join completes before any graph or admission slot escapes.
+// The page's slot covers one worker. Taking a spare slot for the second preserves
+// the global work bound, with serial fallback rather than a queue or ErrBusy.
+func (r *TraceReader) loadSpans(ctx context.Context, items []TraceItem) error {
+	available := 0
+	for _, item := range items {
+		if item.State == TraceAvailable {
+			available++
+		}
+	}
+	workers := 1
+	if available > 1 {
+		if err := r.spans.store.admit(ctx); err == nil {
+			workers = 2
+			defer r.spans.store.end()
+		} else if !errors.Is(err, ErrBusy) {
+			return err
+		}
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var first error
+	var once sync.Once
+	load := func(start int) {
+		position := 0
+		for i := range items {
+			if items[i].State != TraceAvailable {
+				continue
+			}
+			assigned := position%workers == start
+			position++
+			if !assigned {
+				continue
+			}
+			if err := ctx.Err(); err != nil {
+				once.Do(func() { first = err; cancel() })
+				return
+			}
+			item := &items[i]
+			stored, err := r.spans.store.readObject(ctx, item.Receipt.Reference)
+			if err == nil {
+				item.Span, err = r.spans.decodeSpan(ctx, item.Execution, stored)
+			}
+			if err != nil {
+				once.Do(func() { first = err; cancel() })
+				return
+			}
+		}
+	}
+	var joined sync.WaitGroup
+	if workers == 2 {
+		joined.Go(func() { load(1) })
+	}
+	load(0)
+	joined.Wait()
+	if first != nil {
+		return first
+	}
+	return ctx.Err()
 }

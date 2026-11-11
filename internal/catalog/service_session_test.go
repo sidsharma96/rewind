@@ -4,6 +4,7 @@ package catalog
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"encoding/pem"
@@ -18,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -80,7 +82,35 @@ func TestNativeClaudeSessionInspectionAndRetry(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	server.Config.Handler = handler
+	// A completed execution's span and capture must reach the TLS receiver
+	// together. Registration still goes through normally before either write.
+	var deliveryMu sync.Mutex
+	pending := make(map[string]chan struct{})
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut && (strings.HasSuffix(r.URL.Path, "/span") || strings.HasSuffix(r.URL.Path, "/capture")) {
+			key := r.URL.Path[:strings.LastIndex(r.URL.Path, "/")]
+			deliveryMu.Lock()
+			peer, found := pending[key]
+			if found {
+				delete(pending, key)
+				close(peer)
+			} else {
+				peer = make(chan struct{})
+				pending[key] = peer
+			}
+			deliveryMu.Unlock()
+			ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+			defer cancel()
+			select {
+			case <-peer:
+			case <-ctx.Done():
+				t.Error("span and capture did not overlap at the TLS receiver")
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+		}
+		handler.ServeHTTP(w, r)
+	})
 	server.StartTLS()
 	t.Cleanup(server.Close)
 	dir := t.TempDir()
@@ -270,5 +300,5 @@ func TestNativeClaudeSessionInspectionAndRetry(t *testing.T) {
 	if _, err := fresh.Playback(t.Context(), first[0].Execution); err == nil {
 		t.Fatal("revoked reader accepted")
 	}
-	t.Log("Claude session fixture: independent owners, reported failed tool state, current trace pages, login-preserved readable answer, exact saved-byte playback, original retry receipts after stream/prompt removal, reader revocation")
+	t.Log("Claude session fixture: overlapping span/capture delivery, independent owners, reported failed tool state, current trace pages, login-preserved readable answer, exact saved-byte playback, original retry receipts after stream/prompt removal, reader revocation")
 }

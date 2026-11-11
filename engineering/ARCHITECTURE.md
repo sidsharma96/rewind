@@ -166,9 +166,14 @@ The existing `(project, trace_id, span_id, kind)` primary key supports distinct-
 seeking across both retained kinds. Native tests record an ordered index-only
 scan under PostgreSQL 16.13, without timings. Logical limits do not hard-bound
 physical database work: planner choices, dead rows and lock waits still matter.
-Sequential GETs cap call count and stored bytes; per-span codec limits multiplied
-by the candidate cap bound expansion/graph work, not exact heap use or hard CPU
-time. A span that cannot fit an empty page is an explicit limit error; a span
+Ordered catalog lookups select and reserve the page's stored-byte budget before
+object reads. Selected objects load through at most two joined workers; the second
+runs only when an additional shared coordinator admission slot is available.
+Without a spare slot the page loads serially, preserving the global work bound.
+Results stay in key order, and any read/decode failure cancels and joins the workers
+before returning a zero page. GET count and stored bytes remain bounded by selected
+records; per-span codec limits multiplied by the candidate cap bound expansion/graph
+work, not exact heap use or hard CPU time. A span that cannot fit an empty page is an explicit limit error; a span
 that only exceeds remaining space is left for continuation. Production capacity is unmeasured; the explicit service supplies configured bounds
 and a scoped public position encoding. Revisit fixed membership when a required
 consumer needs reproducible resumable selection rather than refreshed inspection.
