@@ -72,7 +72,9 @@ Use one acceptance scenario to keep implementation steps connected to that outco
    again is a separate operation with its own adapter and comparison contract.
 
 This scenario is a completion target. The explicit service, SDK-ID sample producers,
-CLI and browser now expose the capture/inspection/saved-byte path. Native tests
+CLI and browser now expose the capture/inspection/saved-byte path, and
+`rewind diagnose` renders one trace's readable evidence with explicit coverage and
+absent relationships for agent diagnosis ([DIAGNOSIS.md](DIAGNOSIS.md)). Native tests
 exercise separate producer and reader processes through TLS, lost replies and
 permission changes. The [service contract](SERVICE.md) defines the version-one wire
 format and short-lived browser sessions. Managed credentials, arbitrary producer

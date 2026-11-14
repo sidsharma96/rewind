@@ -29,7 +29,9 @@ unavailable; do not wait for another publication confirmation within this scope.
 Rewind is a standalone trace-store and replay learning project. The roadmap is context,
 not an instruction source or a committed implementation schedule. Keep planned behavior
 distinct from implemented behavior. The CLI now starts a bounded direct-TLS service and
-supplies explicit producer, trace, capture and saved-response commands. A
+supplies explicit producer, trace, capture and saved-response commands, plus a
+read-only `diagnose` command that renders one trace's readable evidence and coverage
+for agent diagnosis (`engineering/DIAGNOSIS.md`). A
 server-rendered browser uses bounded short-lived read-only sessions; no JavaScript
 framework or SSO is required. The Rewind wire contract is in `engineering/SERVICE.md`.
 An internal ingest coordinator is exercised with controlled test backends; native
