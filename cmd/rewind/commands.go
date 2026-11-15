@@ -93,35 +93,11 @@ func clientCommand(ctx context.Context, name string, args []string, out io.Write
 	if flags.Parse(args) != nil || flags.NArg() != 0 || *project != "" && *projectHex != "" {
 		return errArguments
 	}
-	token, err := readPrivate(*tokenFile, 65)
+	client, transport, err := readerClient(*endpoint, *tokenFile, *caFile)
 	if err != nil {
 		return err
 	}
-	if len(token) == 65 && token[64] == '\n' {
-		token = token[:64]
-	}
-	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
-	if *caFile != "" {
-		data, err := readPublic(*caFile, 1<<20)
-		if err != nil || len(data) > 1<<20 {
-			return errArguments
-		}
-		roots, err := x509.SystemCertPool()
-		if err != nil {
-			roots = x509.NewCertPool()
-		}
-		if !roots.AppendCertsFromPEM(data) {
-			return errArguments
-		}
-		tlsConfig.RootCAs = roots
-	}
-	transport := &http.Transport{DisableCompression: true, TLSClientConfig: tlsConfig, DialContext: (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 20 * time.Second}).DialContext,
-		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 20 * time.Second, MaxResponseHeaderBytes: 16 << 10, MaxConnsPerHost: 2, MaxIdleConns: 2, IdleConnTimeout: 20 * time.Second}
 	defer transport.CloseIdleConnections()
-	client, err := httpapi.NewClient(*endpoint, string(token), &http.Client{Transport: transport, Timeout: 30 * time.Second}, clientByteLimit, clientByteLimit)
-	if err != nil {
-		return errArguments
-	}
 	key := *projectHex
 	if *project != "" {
 		key = httpapi.Opaque(*project)
@@ -187,6 +163,40 @@ func clientCommand(ctx context.Context, name string, args []string, out io.Write
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(result)
+}
+
+// readerClient builds the HTTPS client shared by credentialed commands. The caller
+// closes the transport's idle connections when it is done.
+func readerClient(endpoint, tokenFile, caFile string) (*httpapi.Client, *http.Transport, error) {
+	token, err := readPrivate(tokenFile, 65)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(token) == 65 && token[64] == '\n' {
+		token = token[:64]
+	}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if caFile != "" {
+		data, err := readPublic(caFile, 1<<20)
+		if err != nil || len(data) > 1<<20 {
+			return nil, nil, errArguments
+		}
+		roots, err := x509.SystemCertPool()
+		if err != nil {
+			roots = x509.NewCertPool()
+		}
+		if !roots.AppendCertsFromPEM(data) {
+			return nil, nil, errArguments
+		}
+		tlsConfig.RootCAs = roots
+	}
+	transport := &http.Transport{DisableCompression: true, TLSClientConfig: tlsConfig, DialContext: (&net.Dialer{Timeout: 5 * time.Second, KeepAlive: 20 * time.Second}).DialContext,
+		TLSHandshakeTimeout: 5 * time.Second, ResponseHeaderTimeout: 20 * time.Second, MaxResponseHeaderBytes: 16 << 10, MaxConnsPerHost: 2, MaxIdleConns: 2, IdleConnTimeout: 20 * time.Second}
+	client, err := httpapi.NewClient(endpoint, string(token), &http.Client{Transport: transport, Timeout: 30 * time.Second}, clientByteLimit, clientByteLimit)
+	if err != nil {
+		return nil, nil, errArguments
+	}
+	return client, transport, nil
 }
 func tokenCommand(args []string, out io.Writer) error {
 	flags := flag.NewFlagSet("token", flag.ContinueOnError)

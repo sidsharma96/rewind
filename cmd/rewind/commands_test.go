@@ -168,3 +168,30 @@ func TestHelpDescribesImplementedEntryPoints(t *testing.T) {
 		t.Fatal("stale help")
 	}
 }
+
+func TestDiagnoseRulesArePublishedVerbatimAndFlagsBounded(t *testing.T) {
+	var out bytes.Buffer
+	if err := run([]string{"diagnose", "--rules"}, &out); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := os.ReadFile("../../engineering/DIAGNOSIS.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != diagnosisRules || !strings.Contains(string(doc), "```text\n"+diagnosisRules+"```") {
+		t.Fatal("printed rules and engineering/DIAGNOSIS.md differ")
+	}
+	for _, args := range [][]string{
+		{"diagnose", "--rules", "--trace", "x"},
+		{"diagnose", "--max-spans", "0"},
+		{"diagnose", "--max-spans", "10001"},
+		{"diagnose", "--interpret", "guess"},
+		{"diagnose", "--timeout", "1ms"},
+		{"diagnose", "--project", "a", "--project-hex", "61"},
+		{"diagnose", "extra"},
+	} {
+		if err := run(args, &out); err == nil {
+			t.Errorf("accepted %v", args)
+		}
+	}
+}

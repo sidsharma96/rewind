@@ -31,6 +31,8 @@ register --endpoint URL --token-file FILE --project PROJECT --trace ID --span ID
 save-span|save-capture ... --file FILE       Save one ended span or independent capture
 trace ... --trace ID [--cursor POSITION]     Inspect one current trace page
 capture|playback ... --trace ID --span ID    Inspect capture or retrieve saved response
+diagnose ... --trace ID [--max-spans N]     Print every readable span and capture as evidence text
+diagnose --rules                           Print the root-cause rules for that evidence
 playback ... --out FILE                     Save exact response to a new private file
 version                                    Print the development version
 
@@ -48,6 +50,8 @@ Accepted records require remote catalog/object storage; a trace page is not a co
 			return serverCommand(ctx, args[0], args[1:], out)
 		case "token":
 			return tokenCommand(args[1:], out)
+		case "diagnose":
+			return diagnoseCommand(ctx, args[1:], out)
 		case "register", "save-span", "save-capture", "trace", "capture", "playback":
 			return clientCommand(ctx, args[0], args[1:], out)
 		}

@@ -29,6 +29,18 @@ bin/rewind trace --endpoint https://rewind.example.com \
   --token-file reader.token --project demo --trace TRACE_ID
 ```
 
+To hand a whole trace to an agent, print every readable span and capture as one
+evidence document, and the root-cause rules it is designed for:
+
+```sh
+bin/rewind diagnose --endpoint https://rewind.example.com \
+  --token-file reader.token --project demo --trace TRACE_ID
+bin/rewind diagnose --rules
+```
+
+It states coverage, absent relationships and failures explicitly; see
+[diagnosing a run](engineering/DIAGNOSIS.md) for what it does and does not claim.
+
 The browser uses the same service origin and project-reader policy. The
 [two-producer example](engineering/SERVICE.md#two-producer-example) records a
 handoff and separate failed/successful tool attempts, with saved plans for

@@ -216,7 +216,10 @@ Use keyboard-operable controls and readable desktop/phone layouts. The initial
 page is rendered on the server and uses native HTML disclosures; no JavaScript
 or frontend framework is needed. Illustrative views must never claim that data was ingested
 or measured. Terminal commands must make unavailable results and failures as
-explicit as the browser does.
+explicit as the browser does. `rewind diagnose` reads every page and capture of one
+trace and prints coverage, absent relationships, failures, identical request bytes
+and every span as one bounded text document; [DIAGNOSIS.md](DIAGNOSIS.md) describes
+its output, limits and the root-cause rules it is designed for.
 
 ## Acceptance and limits
 
