@@ -10,6 +10,9 @@ their costs are implemented and examined explicitly. The service uses PostgreSQL
 for authoritative acceptance and R2 for immutable objects. Both must survive the
 ingest machine for an acknowledgment to mean remote durability.
 
+Rewind is an active learning project, not a supported production service. Wire
+formats and the catalog schema may still change.
+
 ## Getting started
 
 Install Go 1.27 or newer and Git, then build:
@@ -19,6 +22,13 @@ make check
 make build
 bin/rewind help
 ```
+
+`make check` needs no database or cloud account. The quickest way to exercise the
+whole service locally is the opt-in integration suite: point
+`REWIND_TEST_POSTGRES` at a disposable PostgreSQL database and run the service
+tests in `./internal/catalog`, which start TLS clients, separate producer/reader
+processes and browser sessions against controlled object storage (see
+[CONTRIBUTING.md](CONTRIBUTING.md)).
 
 Follow the [service setup](engineering/SERVICE.md#operator-setup-and-first-run) to
 configure TLS, remote stores and separately scoped credentials. Once the service
@@ -54,3 +64,7 @@ provision or deploy a service.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contributor setup and checks, and the
 [architecture](engineering/ARCHITECTURE.md) for implemented and remaining boundaries.
+
+## License
+
+[MIT](LICENSE)

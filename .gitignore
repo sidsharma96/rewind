@@ -1,6 +1,13 @@
 /bin/
 /.tools/
 /.claude/
+/.codex/
+# Local agent guidance and review workflow
+/AGENTS.md
+/agents/
+# Hooks installed by local tooling; only pre-commit is shared
+/.githooks/*
+!/.githooks/pre-commit
 /review/
 /docs/
 /.wrangler/

@@ -228,9 +228,8 @@ boundary with native PostgreSQL and controlled object HTTP. Use independently
 scoped credentials, fresh reader clients, both capture/span arrival orders, lost
 application replies, conflicting retries, revoked permission, malformed/oversized
 requests, overload, credential/session expiry and shutdown. Verify browser layout,
-keyboard navigation and untrusted content with actual rendered pages. Keep public
-code checks independent of private book/configuration. Teach the implemented
-boundary in the private book when behavior changes.
+keyboard navigation and untrusted content with actual rendered pages. Keep code
+checks independent of any local documentation or tool configuration.
 
 The server needs connection/header/body/concurrency/deadline bounds before reading
 untrusted bodies. Service admission must also include response encoding and slow

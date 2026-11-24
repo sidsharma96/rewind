@@ -125,10 +125,9 @@ generic failure; a separate invocation of the reviewed cleanup completed retirem
 The more specific remote cause was not retained. The temporary compute estimate was $0.03,
 including the provider minimum per VM; this is not an invoice or a timing result.
 
-Compact local evidence is retained under ignored
-`.tools/reviews/live-host-recovery/live-result-summary.json` and `live-run-2/`.
-The summary pins the source tree and guest binary hash. These local records are
-not a dependency of normal builds or checks.
+The operator retained a compact evidence summary outside the repository, pinning
+the source tree and guest binary hash. It is not a dependency of normal builds or
+checks.
 
 ## Failure in the harness and remaining limits
 

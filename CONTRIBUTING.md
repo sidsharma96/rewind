@@ -47,10 +47,9 @@ descriptive, such as `batch-recovery`. Explain the problem, resulting behavior a
 relevant checks in a pull request. Include a concrete failure sequence when fixing
 a bug, and distinguish implemented behavior from a proposal.
 
-Hosted Actions currently runs only on request because its included minutes are
-exhausted. Pull requests use a `local/source` status for checks run against their
-exact commit; the PR records the commands and platform. This is local verification,
-not a GitHub-hosted CI result.
+The hosted Checks workflow runs `make check`, `make race` and `make build` on every
+pull request and on pushes to `main`. It does not run the opt-in PostgreSQL, drill
+or R2 tests; say in the pull request which of those you ran.
 
 Use synthetic data. Keep credentials, captured production payloads, raw measurements
 and generated output out of Git. Shared repository tools use Go; shell entry points
