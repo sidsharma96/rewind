@@ -20,6 +20,7 @@ build:
 artifacts:
 	go run ./tools/checkrepo
 
+# Maintainer-only: builds the private book, which is not part of this repository.
 docs:
 	go run ./tools/checkdocs
 	mdbook build docs
