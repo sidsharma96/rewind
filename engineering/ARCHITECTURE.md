@@ -91,11 +91,11 @@ shows their CLI-visible inputs/results in the inspector. It does not install
 runtime hooks or provide live-progress durability; its private saved plan drives
 delivery-only retries. See [the supported session boundary](SERVICE.md#importing-one-completed-claude-code-session).
 
-The learning outcome remains part of the project: implement and explain storage
+Storage-engine depth remains part of the project: implement and explain storage
 formats, buffering and indexing choices, compaction, recovery and query algorithms
 against concrete workloads and credible baselines, counting memory, requests and
 transferred bytes as well as CPU work. A useful first release is an intermediate
-milestone; it does not silently remove later agreed learning goals. The roadmap's
+milestone; it does not silently remove later agreed storage goals. The roadmap's
 unselected mechanisms and illustrative performance numbers are not completion gates.
 
 Separate immutable lifecycle events remain a required extension direction for
@@ -214,7 +214,7 @@ uses object-storage Parquet blocks for trace-ID lookup and cross-trace queries;
 its telemetry workload does not supply Rewind's producer ownership or playback
 contract. These examples inform later workloads, not a new database, SQL engine,
 background investigation service or shared Concordance engine. Select mechanisms
-against actual queries and measured costs in the existing learning stages.
+against actual queries and measured costs in their planned stages.
 
 ## Agreed requirements
 
