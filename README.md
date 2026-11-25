@@ -5,13 +5,13 @@ with project permission can inspect spans and captured inputs/results through
 terminal commands or a browser, then retrieve a complete saved response without
 running the tool or model again.
 
-The storage engine is also a learning project: formats, indexing, recovery and
+The storage engine is also a goal in itself: formats, indexing, recovery and
 their costs are implemented and examined explicitly. The service uses PostgreSQL
 for authoritative acceptance and R2 for immutable objects. Both must survive the
 ingest machine for an acknowledgment to mean remote durability.
 
-Rewind is an active learning project, not a supported production service. Wire
-formats and the catalog schema may still change.
+Rewind is under active development and is not a supported production service.
+Wire formats and the catalog schema may still change.
 
 ## Getting started
 
